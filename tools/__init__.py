@@ -6,6 +6,7 @@ from .analyze import AnalyzeTool
 from .apilookup import LookupTool
 from .challenge import ChallengeTool
 from .chat import ChatTool
+from .chat_smart import ChatSmartTool
 from .clink import CLinkTool
 from .codereview import CodeReviewTool
 from .consensus import ConsensusTool
@@ -14,6 +15,7 @@ from .docgen import DocgenTool
 from .listmodels import ListModelsTool
 from .planner import PlannerTool
 from .precommit import PrecommitTool
+from .project_switch import ProjectSwitchTool
 from .refactor import RefactorTool
 from .secaudit import SecauditTool
 from .testgen import TestGenTool
@@ -29,11 +31,13 @@ __all__ = [
     "AnalyzeTool",
     "LookupTool",
     "ChatTool",
+    "ChatSmartTool",
     "CLinkTool",
     "ConsensusTool",
     "ListModelsTool",
     "PlannerTool",
     "PrecommitTool",
+    "ProjectSwitchTool",
     "ChallengeTool",
     "RefactorTool",
     "SecauditTool",
