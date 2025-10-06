@@ -1,0 +1,30 @@
+{
+  "mcpServers": {
+    "zen": {
+      "command": "docker",
+      "args": [
+        "exec", "-i", "zen-mcp-server", "python", "server.py"
+      ],
+      "env": {
+        "GEMINI_API_KEY": "YOUR_GEMINI_KEY",
+        "OPENAI_API_KEY": "YOUR_OPENAI_KEY",
+        "NEW_RELIC_API_KEY": "YOUR_NEWRELIC_KEY",
+        "NEW_RELIC_ACCOUNT_ID": "YOUR_ACCOUNT_ID"
+      }
+    },
+    "context7": {
+      "command": "docker",
+      "args": [
+        "exec", "-i", "context7-mcp-server", "context7-mcp"
+      ]
+    },
+    "newrelic": {
+      "command": "npx",
+      "args": ["-y", "@cloudbring/newrelic-mcp"],
+      "env": {
+        "NEW_RELIC_API_KEY": "YOUR_NEWRELIC_KEY",
+        "NEW_RELIC_ACCOUNT_ID": "YOUR_ACCOUNT_ID"
+      }
+    }
+  }
+}

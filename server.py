@@ -58,6 +58,8 @@ from tools import (  # noqa: E402
     DocgenTool,
     ListModelsTool,
     LookupTool,
+    NewRelicTool,
+    PersistentMemoryTool,
     PlannerTool,
     PrecommitTool,
     RefactorTool,
@@ -65,7 +67,11 @@ from tools import (  # noqa: E402
     TestGenTool,
     ThinkDeepTool,
     TracerTool,
+    TodoManagerTool,
     VersionTool,
+    ShellExecutorTool,
+    ScriptManagerTool,
+    CursorCLITool,
 )
 from tools.models import ToolOutput  # noqa: E402
 from utils.env import env_override_enabled, get_env  # noqa: E402
@@ -276,6 +282,12 @@ TOOLS = {
     "apilookup": LookupTool(),  # Quick web/API lookup instructions
     "listmodels": ListModelsTool(),  # List all available AI models by provider
     "version": VersionTool(),  # Display server version and system information
+    "persistent_memory": PersistentMemoryTool(),  # Persistent memory management for crash recovery
+    "todo_manager": TodoManagerTool(),  # Cross-platform todo management with memory integration
+    "shell_executor": ShellExecutorTool(),  # Execute shell commands and scripts safely
+    "script_manager": ScriptManagerTool(),  # Manage zen scripts with agent integration
+    "cursor_cli": CursorCLITool(),  # Execute Cursor CLI commands for cross-platform AI orchestration
+    "newrelic": NewRelicTool(),  # New Relic API integration for server monitoring and metrics querying
 }
 TOOLS = filter_disabled_tools(TOOLS)
 
@@ -370,6 +382,11 @@ PROMPT_TEMPLATES = {
         "name": "version",
         "description": "Show server version and system information",
         "template": "Show Zen MCP Server version",
+    },
+    "newrelic": {
+        "name": "newrelic",
+        "description": "Query New Relic APIs for server metrics, application performance, and infrastructure monitoring",
+        "template": "Query New Relic for server monitoring data",
     },
 }
 

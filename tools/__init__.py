@@ -16,12 +16,19 @@ from .listmodels import ListModelsTool
 from .planner import PlannerTool
 from .precommit import PrecommitTool
 from .project_switch import ProjectSwitchTool
+from .command_sync import CommandSyncTool
+from .todo_manager import TodoManagerTool
+from .persistent_memory import PersistentMemoryTool
 from .refactor import RefactorTool
 from .secaudit import SecauditTool
 from .testgen import TestGenTool
 from .thinkdeep import ThinkDeepTool
 from .tracer import TracerTool
 from .version import VersionTool
+from .shell_executor import ShellExecutorTool
+from .script_manager import ScriptManagerTool
+from .cursor_cli import CursorCLITool
+from .newrelic_tool import NewRelicTool
 
 __all__ = [
     "ThinkDeepTool",
@@ -38,10 +45,17 @@ __all__ = [
     "PlannerTool",
     "PrecommitTool",
     "ProjectSwitchTool",
+    "CommandSyncTool",
+    "TodoManagerTool",
+    "PersistentMemoryTool",
     "ChallengeTool",
     "RefactorTool",
     "SecauditTool",
     "TestGenTool",
     "TracerTool",
     "VersionTool",
+    "ShellExecutorTool",
+    "ScriptManagerTool",
+    "CursorCLITool",
+    "NewRelicTool",
 ]
