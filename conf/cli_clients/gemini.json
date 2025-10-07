@@ -1,16 +1,30 @@
 {
   "name": "gemini",
-  "command": "gemini",
+  "command": "/home/dingo/.nvm/versions/node/v22.20.0/bin/gemini",
   "additional_args": [
-    "--telemetry",
-    "false",
-    "--yolo"
+    "--yolo",
+    "--approval-mode",
+    "yolo"
   ],
   "env": {},
   "roles": {
     "default": {
       "prompt_path": "systemprompts/clink/default.txt",
       "role_args": []
+    },
+    "analyzer": {
+      "prompt_path": "systemprompts/clink/gemini_analyzer.txt",
+      "role_args": [
+        "--model",
+        "gemini-2.0-flash-exp"
+      ]
+    },
+    "research": {
+      "prompt_path": "systemprompts/clink/gemini_research.txt",
+      "role_args": [
+        "--model",
+        "gemini-2.0-flash-thinking-exp"
+      ]
     },
     "planner": {
       "prompt_path": "systemprompts/clink/default_planner.txt",

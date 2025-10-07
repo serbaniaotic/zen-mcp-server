@@ -1,0 +1,35 @@
+{
+  "name": "copilot",
+  "command": "gh",
+  "additional_args": [
+    "copilot"
+  ],
+  "env": {},
+  "roles": {
+    "suggest": {
+      "prompt_path": "systemprompts/clink/copilot_suggest.txt",
+      "role_args": [
+        "suggest"
+      ]
+    },
+    "explain": {
+      "prompt_path": "systemprompts/clink/copilot_explain.txt",
+      "role_args": [
+        "explain"
+      ]
+    },
+    "implement": {
+      "prompt_path": "systemprompts/clink/copilot_implement.txt",
+      "role_args": [
+        "suggest"
+      ]
+    },
+    "debug": {
+      "prompt_path": "systemprompts/clink/copilot_debug.txt",
+      "role_args": [
+        "suggest"
+      ]
+    }
+  }
+}
+

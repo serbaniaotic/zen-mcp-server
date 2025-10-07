@@ -1,0 +1,27 @@
+{
+  "name": "cursor",
+  "command": "/home/dingo/.cursor-server/bin/fe5d1728063e86edeeda5bebd2c8e14bf4d0f960/bin/remote-cli/cursor",
+  "additional_args": [
+    "--wait"
+  ],
+  "env": {},
+  "roles": {
+    "composer": {
+      "prompt_path": "systemprompts/clink/cursor_composer.txt",
+      "role_args": []
+    },
+    "chat": {
+      "prompt_path": "systemprompts/clink/cursor_chat.txt",
+      "role_args": []
+    },
+    "edit": {
+      "prompt_path": "systemprompts/clink/cursor_edit.txt",
+      "role_args": []
+    },
+    "batch": {
+      "prompt_path": "systemprompts/clink/cursor_batch.txt",
+      "role_args": []
+    }
+  }
+}
+

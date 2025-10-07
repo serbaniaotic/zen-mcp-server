@@ -29,6 +29,10 @@ from .shell_executor import ShellExecutorTool
 from .script_manager import ScriptManagerTool
 from .cursor_cli import CursorCLITool
 from .newrelic_tool import NewRelicTool
+from .append_evidence import AppendEvidenceTool
+from .evidence_recovery import EvidenceVersioningTool
+from .agent_handover import AgentHandoverTool
+from .spatial_memory import SpatialMemoryTool
 
 __all__ = [
     "ThinkDeepTool",
@@ -58,4 +62,8 @@ __all__ = [
     "ScriptManagerTool",
     "CursorCLITool",
     "NewRelicTool",
+    "AppendEvidenceTool",
+    "EvidenceVersioningTool",
+    "AgentHandoverTool",
+    "SpatialMemoryTool",
 ]

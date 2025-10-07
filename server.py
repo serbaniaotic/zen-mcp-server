@@ -72,6 +72,10 @@ from tools import (  # noqa: E402
     ShellExecutorTool,
     ScriptManagerTool,
     CursorCLITool,
+    AppendEvidenceTool,
+    EvidenceVersioningTool,
+    AgentHandoverTool,
+    SpatialMemoryTool,
 )
 from tools.models import ToolOutput  # noqa: E402
 from utils.env import env_override_enabled, get_env  # noqa: E402
@@ -288,6 +292,10 @@ TOOLS = {
     "script_manager": ScriptManagerTool(),  # Manage zen scripts with agent integration
     "cursor_cli": CursorCLITool(),  # Execute Cursor CLI commands for cross-platform AI orchestration
     "newrelic": NewRelicTool(),  # New Relic API integration for server monitoring and metrics querying
+    "append_evidence": AppendEvidenceTool(),  # Safe evidence appending with collision detection
+    "evidence_versioning": EvidenceVersioningTool(),  # File versioning and collision detection utilities
+    "agent_handover": AgentHandoverTool(),  # Coordinate agent transitions with context preservation
+    "spatial_memory": SpatialMemoryTool(),  # Spatial memory with domain colors for intelligent retrieval
 }
 TOOLS = filter_disabled_tools(TOOLS)
 
