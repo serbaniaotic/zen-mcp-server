@@ -175,6 +175,89 @@
       "intelligence_score": 15
     },
     {
+      "model_name": "deepseek/deepseek-chat",
+      "aliases": [
+        "deepseek-chat",
+        "deepseek-v3"
+      ],
+      "context_window": 65536,
+      "max_output_tokens": 8192,
+      "supports_extended_thinking": false,
+      "supports_json_mode": true,
+      "supports_function_calling": true,
+      "supports_images": false,
+      "max_image_size_mb": 0.0,
+      "description": "DeepSeek Chat - Fast and capable model for general tasks (text-only)",
+      "intelligence_score": 13
+    },
+    {
+      "model_name": "qwen/qwen-max",
+      "aliases": [
+        "qwen-max",
+        "qwen",
+        "qwenmax"
+      ],
+      "context_window": 32768,
+      "max_output_tokens": 8192,
+      "supports_extended_thinking": false,
+      "supports_json_mode": true,
+      "supports_function_calling": true,
+      "supports_images": true,
+      "max_image_size_mb": 10.0,
+      "description": "Alibaba's QWen-Max - Large multilingual model with vision support",
+      "intelligence_score": 13
+    },
+    {
+      "model_name": "qwen/qwen-2.5-72b-instruct",
+      "aliases": [
+        "qwen-2.5",
+        "qwen72b"
+      ],
+      "context_window": 131072,
+      "max_output_tokens": 8192,
+      "supports_extended_thinking": false,
+      "supports_json_mode": true,
+      "supports_function_calling": true,
+      "supports_images": false,
+      "max_image_size_mb": 0.0,
+      "description": "QWen 2.5 72B Instruct - Powerful instruction-following model (text-only)",
+      "intelligence_score": 12
+    },
+    {
+      "model_name": "zhipuai/glm-4-plus",
+      "aliases": [
+        "glm-4-plus",
+        "glm4-plus",
+        "glm-plus"
+      ],
+      "context_window": 128000,
+      "max_output_tokens": 8192,
+      "supports_extended_thinking": false,
+      "supports_json_mode": true,
+      "supports_function_calling": true,
+      "supports_images": true,
+      "max_image_size_mb": 10.0,
+      "description": "Zhipu GLM-4 Plus - Advanced Chinese-English model with vision",
+      "intelligence_score": 13
+    },
+    {
+      "model_name": "zhipuai/glm-4.5",
+      "aliases": [
+        "glm-4.5",
+        "glm4.5",
+        "glm"
+      ],
+      "context_window": 128000,
+      "max_output_tokens": 8192,
+      "supports_extended_thinking": false,
+      "supports_json_mode": true,
+      "supports_function_calling": true,
+      "supports_images": false,
+      "max_image_size_mb": 0.0,
+      "description": "Zhipu GLM-4.5 - Latest generation Chinese-English bilingual model (text-only)",
+      "intelligence_score": 12
+    },
+    {
       "model_name": "perplexity/llama-3-sonar-large-32k-online",
       "aliases": [
         "perplexity",
