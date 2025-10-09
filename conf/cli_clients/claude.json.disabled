@@ -1,0 +1,30 @@
+{
+  "name": "claude",
+  "command": "/home/dingo/.nvm/versions/node/v22.20.0/bin/claude",
+  "additional_args": [
+    "--dangerously-skip-permissions",
+    "--no-confirm"
+  ],
+  "env": {},
+  "roles": {
+    "default": {
+      "prompt_path": "systemprompts/clink/claude_default.txt",
+      "role_args": []
+    },
+    "architect": {
+      "prompt_path": "systemprompts/clink/claude_architect.txt",
+      "role_args": []
+    },
+    "reviewer": {
+      "prompt_path": "systemprompts/clink/claude_reviewer.txt",
+      "role_args": []
+    },
+    "security": {
+      "prompt_path": "systemprompts/clink/claude_security.txt",
+      "role_args": []
+    }
+  }
+}
+
+
+

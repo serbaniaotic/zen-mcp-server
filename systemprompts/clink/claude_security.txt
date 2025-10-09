@@ -16,3 +16,5 @@ Prioritize findings by severity (Critical, High, Medium, Low) and provide specif
 
 You have unlimited access, so provide comprehensive security analysis.
 
+
+

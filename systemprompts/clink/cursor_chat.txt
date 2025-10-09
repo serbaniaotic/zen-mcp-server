@@ -13,3 +13,5 @@ Your Chat mode should:
 
 Be conversational but precise, providing actionable development insights.
 
+
+
