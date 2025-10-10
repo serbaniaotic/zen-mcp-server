@@ -76,6 +76,10 @@ from tools import (  # noqa: E402
     EvidenceVersioningTool,
     AgentHandoverTool,
     SpatialMemoryTool,
+    WebFetchTool,
+    YouTubeTranscribeTool,
+    WikipediaTool,
+    QCWorkflowTool,
 )
 from tools.models import ToolOutput  # noqa: E402
 from utils.env import env_override_enabled, get_env  # noqa: E402
@@ -267,36 +271,52 @@ def filter_disabled_tools(all_tools: dict[str, Any]) -> dict[str, Any]:
 # Initialize the tool registry with all available AI-powered tools
 # Each tool provides specialized functionality for different development tasks
 # Tools are instantiated once and reused across requests (stateless design)
+
+def _safe_init_tool(tool_class, tool_name):
+    """Safely initialize a tool, returning None if it fails."""
+    try:
+        return tool_class()
+    except Exception as e:
+        logging.warning(f"Failed to initialize tool '{tool_name}': {e}")
+        return None
+
 TOOLS = {
-    "chat": ChatTool(),  # Interactive development chat and brainstorming
-    "clink": CLinkTool(),  # Bridge requests to configured AI CLIs
-    "thinkdeep": ThinkDeepTool(),  # Step-by-step deep thinking workflow with expert analysis
-    "planner": PlannerTool(),  # Interactive sequential planner using workflow architecture
-    "consensus": ConsensusTool(),  # Step-by-step consensus workflow with multi-model analysis
-    "codereview": CodeReviewTool(),  # Comprehensive step-by-step code review workflow with expert analysis
-    "precommit": PrecommitTool(),  # Step-by-step pre-commit validation workflow
-    "debug": DebugIssueTool(),  # Root cause analysis and debugging assistance
-    "secaudit": SecauditTool(),  # Comprehensive security audit with OWASP Top 10 and compliance coverage
-    "docgen": DocgenTool(),  # Step-by-step documentation generation with complexity analysis
-    "analyze": AnalyzeTool(),  # General-purpose file and code analysis
-    "refactor": RefactorTool(),  # Step-by-step refactoring analysis workflow with expert validation
-    "tracer": TracerTool(),  # Static call path prediction and control flow analysis
-    "testgen": TestGenTool(),  # Step-by-step test generation workflow with expert validation
-    "challenge": ChallengeTool(),  # Critical challenge prompt wrapper to avoid automatic agreement
-    "apilookup": LookupTool(),  # Quick web/API lookup instructions
-    "listmodels": ListModelsTool(),  # List all available AI models by provider
-    "version": VersionTool(),  # Display server version and system information
-    "persistent_memory": PersistentMemoryTool(),  # Persistent memory management for crash recovery
-    "todo_manager": TodoManagerTool(),  # Cross-platform todo management with memory integration
-    "shell_executor": ShellExecutorTool(),  # Execute shell commands and scripts safely
-    "script_manager": ScriptManagerTool(),  # Manage zen scripts with agent integration
-    "cursor_cli": CursorCLITool(),  # Execute Cursor CLI commands for cross-platform AI orchestration
-    "newrelic": NewRelicTool(),  # New Relic API integration for server monitoring and metrics querying
-    "append_evidence": AppendEvidenceTool(),  # Safe evidence appending with collision detection
-    "evidence_versioning": EvidenceVersioningTool(),  # File versioning and collision detection utilities
-    "agent_handover": AgentHandoverTool(),  # Coordinate agent transitions with context preservation
-    "spatial_memory": SpatialMemoryTool(),  # Spatial memory with domain colors for intelligent retrieval
+    "chat": _safe_init_tool(ChatTool, "chat"),
+    "clink": _safe_init_tool(CLinkTool, "clink"),
+    "thinkdeep": _safe_init_tool(ThinkDeepTool, "thinkdeep"),
+    "planner": _safe_init_tool(PlannerTool, "planner"),
+    "consensus": _safe_init_tool(ConsensusTool, "consensus"),
+    "codereview": _safe_init_tool(CodeReviewTool, "codereview"),
+    "precommit": _safe_init_tool(PrecommitTool, "precommit"),
+    "debug": _safe_init_tool(DebugIssueTool, "debug"),
+    "secaudit": _safe_init_tool(SecauditTool, "secaudit"),
+    "docgen": _safe_init_tool(DocgenTool, "docgen"),
+    "analyze": _safe_init_tool(AnalyzeTool, "analyze"),
+    "refactor": _safe_init_tool(RefactorTool, "refactor"),
+    "tracer": _safe_init_tool(TracerTool, "tracer"),
+    "testgen": _safe_init_tool(TestGenTool, "testgen"),
+    "challenge": _safe_init_tool(ChallengeTool, "challenge"),
+    "apilookup": _safe_init_tool(LookupTool, "apilookup"),
+    "listmodels": _safe_init_tool(ListModelsTool, "listmodels"),
+    "version": _safe_init_tool(VersionTool, "version"),
+    "persistent_memory": _safe_init_tool(PersistentMemoryTool, "persistent_memory"),
+    "todo_manager": _safe_init_tool(TodoManagerTool, "todo_manager"),
+    "shell_executor": _safe_init_tool(ShellExecutorTool, "shell_executor"),
+    "script_manager": _safe_init_tool(ScriptManagerTool, "script_manager"),
+    "cursor_cli": _safe_init_tool(CursorCLITool, "cursor_cli"),
+    "newrelic": _safe_init_tool(NewRelicTool, "newrelic"),
+    "append_evidence": _safe_init_tool(AppendEvidenceTool, "append_evidence"),
+    "evidence_versioning": _safe_init_tool(EvidenceVersioningTool, "evidence_versioning"),
+    "agent_handover": _safe_init_tool(AgentHandoverTool, "agent_handover"),
+    "spatial_memory": _safe_init_tool(SpatialMemoryTool, "spatial_memory"),
+    "webfetch": _safe_init_tool(WebFetchTool, "webfetch"),
+    "youtube_transcribe": _safe_init_tool(YouTubeTranscribeTool, "youtube_transcribe"),
+    "wikipedia": _safe_init_tool(WikipediaTool, "wikipedia"),
+    "qc_workflow": _safe_init_tool(QCWorkflowTool, "qc_workflow"),
 }
+
+# Remove None values (failed initializations)
+TOOLS = {k: v for k, v in TOOLS.items() if v is not None}
 TOOLS = filter_disabled_tools(TOOLS)
 
 # Rich prompt templates for all tools

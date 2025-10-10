@@ -36,14 +36,14 @@ class AgentHandoverRequest(ToolRequest):
 class AgentHandoverTool(BaseTool):
     """
     Coordinates handover between specialized agents in multi-agent workflows.
-    
+
     Implements the "short-lived agent" pattern:
     1. Current agent completes phase
     2. Stores work summary in Pinecone
     3. Terminates (fresh context)
     4. Next agent loads summary from Pinecone
     5. Continues work with minimal tokens
-    
+
     This prevents context pollution and enables 83% token reduction.
     """
 
@@ -52,6 +52,22 @@ class AgentHandoverTool(BaseTool):
 
     def get_description(self) -> str:
         return "Coordinates smooth handover between specialized agents with context preservation in Pinecone"
+
+    def requires_model(self) -> bool:
+        """Agent handover is a coordination utility - no AI model needed"""
+        return False
+
+    def get_input_schema(self) -> dict[str, Any]:
+        """Generate schema from AgentHandoverRequest Pydantic model"""
+        return AgentHandoverRequest.model_json_schema()
+
+    def get_system_prompt(self) -> str:
+        """Not used - agent handover doesn't use AI"""
+        return ""
+
+    async def prepare_prompt(self, request) -> str:
+        """Not used - agent handover doesn't use AI prompts"""
+        return ""
 
     def get_request_model(self) -> type[ToolRequest]:
         return AgentHandoverRequest

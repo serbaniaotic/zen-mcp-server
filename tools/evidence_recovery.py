@@ -23,6 +23,45 @@ class EvidenceVersioningTool(BaseTool):
     def get_description(self) -> str:
         return "Provides file checksum and collision detection utilities for evidence files."
 
+    def requires_model(self) -> bool:
+        """File versioning utility - no AI model needed"""
+        return False
+
+    def get_input_schema(self) -> dict[str, Any]:
+        """Generate input schema for evidence versioning"""
+        return {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["get_checksum", "check_collision"],
+                    "description": "Action to perform: get_checksum or check_collision"
+                },
+                "file_path": {
+                    "type": "string",
+                    "description": "Absolute path to the evidence file"
+                },
+                "expected_checksum": {
+                    "type": "string",
+                    "description": "Expected SHA256 checksum (required for check_collision)"
+                }
+            },
+            "required": ["action", "file_path"]
+        }
+
+    def get_system_prompt(self) -> str:
+        """Not used - evidence versioning doesn't use AI"""
+        return ""
+
+    async def prepare_prompt(self, request) -> str:
+        """Not used - evidence versioning doesn't use AI prompts"""
+        return ""
+
+    def get_request_model(self):
+        """Evidence versioning uses dict arguments directly"""
+        from tools.shared.base_models import ToolRequest
+        return ToolRequest
+
     async def execute(self, arguments: dict[str, Any]) -> list[TextContent]:
         """
         Executes a versioning action, like getting a checksum or checking for a collision.

@@ -35,6 +35,22 @@ class AppendEvidenceTool(BaseTool):
     def get_description(self) -> str:
         return "Safely appends content to a file with collision detection and rollback."
 
+    def requires_model(self) -> bool:
+        """File operation utility - no AI model needed"""
+        return False
+
+    def get_input_schema(self) -> dict[str, Any]:
+        """Generate schema from AppendEvidenceRequest Pydantic model"""
+        return AppendEvidenceRequest.model_json_schema()
+
+    def get_system_prompt(self) -> str:
+        """Not used - append evidence doesn't use AI"""
+        return ""
+
+    async def prepare_prompt(self, request) -> str:
+        """Not used - append evidence doesn't use AI prompts"""
+        return ""
+
     def get_request_model(self) -> type[ToolRequest]:
         return AppendEvidenceRequest
 

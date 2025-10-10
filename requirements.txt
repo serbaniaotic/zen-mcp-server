@@ -4,6 +4,12 @@ openai>=1.55.2  # Minimum version for httpx 0.28.0 compatibility
 pydantic>=2.0.0
 python-dotenv>=1.0.0
 importlib-resources>=5.0.0; python_version<"3.9"
+neo4j>=5.0.0  # MemGraph / graph database driver
+
+# Web content extraction tools
+requests>=2.31.0              # WebFetch HTTP client
+youtube-transcript-api>=0.6.0 # YouTube transcripts
+Wikipedia-API>=0.7.1          # Wikipedia article fetching
 
 # Development dependencies (install with pip install -r requirements-dev.txt)
 # pytest>=7.4.0

@@ -33,6 +33,10 @@ from .append_evidence import AppendEvidenceTool
 from .evidence_recovery import EvidenceVersioningTool
 from .agent_handover import AgentHandoverTool
 from .spatial_memory import SpatialMemoryTool
+from .webfetch import WebFetchTool
+from .youtube_transcribe import YouTubeTranscribeTool
+from .wikipedia import WikipediaTool
+from .qc_workflow import QCWorkflowTool
 
 __all__ = [
     "ThinkDeepTool",
@@ -66,4 +70,8 @@ __all__ = [
     "EvidenceVersioningTool",
     "AgentHandoverTool",
     "SpatialMemoryTool",
+    "WebFetchTool",
+    "YouTubeTranscribeTool",
+    "WikipediaTool",
+    "QCWorkflowTool",
 ]

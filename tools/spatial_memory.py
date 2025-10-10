@@ -51,13 +51,13 @@ class SpatialMemoryRequest(ToolRequest):
 class SpatialMemoryTool(SimpleTool):
     """
     Spatial memory with domain "colors" for intelligent cross-domain retrieval.
-    
+
     Implements the "color/metaphor" concept for embeddings:
     - Vector embeddings = spatial position (semantic meaning)
     - Metadata colors = domain context (technical, legal, business, etc)
     - Abstract patterns = cross-domain bridges (deadlock, race condition, etc)
     - Hybrid search = semantic + keyword/metadata for better retrieval
-    
+
     Example:
       "Database deadlock" (technical domain, deadlock pattern)
       Can be found when searching for "thread contention" (different domain, same pattern)
@@ -68,6 +68,46 @@ class SpatialMemoryTool(SimpleTool):
 
     def get_description(self) -> str:
         return "Store and retrieve with spatial awareness using domain colors and abstract patterns"
+
+    def requires_model(self) -> bool:
+        """Spatial memory is a utility tool - no AI model needed"""
+        return False
+
+    def get_required_fields(self) -> list[str]:
+        """Required fields for spatial memory operations"""
+        return ["action", "content"]
+
+    async def execute(self, arguments: dict[str, Any]) -> list:
+        """
+        Execute spatial memory operation without AI model.
+        This is a utility tool that directly calls Pinecone APIs.
+        """
+        import json
+        from mcp.types import TextContent
+
+        try:
+            # Call the existing run_tool method that has the logic
+            result = self.run_tool(arguments)
+
+            # Format as MCP response
+            return [TextContent(
+                type="text",
+                text=json.dumps(result, indent=2)
+            )]
+        except Exception as e:
+            logger.error(f"Spatial memory execution failed: {e}", exc_info=True)
+            return [TextContent(
+                type="text",
+                text=json.dumps({
+                    "success": False,
+                    "error": str(e),
+                    "message": "Spatial memory operation failed"
+                }, indent=2)
+            )]
+
+    async def prepare_prompt(self, request) -> str:
+        """Not used - spatial memory doesn't use AI prompts"""
+        return ""
 
     def get_system_prompt(self) -> str:
         return """You are a spatial memory system that understands semantic embeddings WITH domain context.
