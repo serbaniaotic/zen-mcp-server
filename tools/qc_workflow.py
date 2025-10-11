@@ -186,6 +186,20 @@ Remember: QC mode is for discussion only - no file writes or command execution."
         working_dir = arguments.get("working_dir", os.getcwd())
         context_arg = arguments.get("context")
         
+        # Parse --load or -loadqc flag for loading specific QCs
+        load_qcs = []
+        if context_arg:
+            if '--load' in context_arg:
+                parts = context_arg.split('--load')
+                context_arg = parts[0].strip()
+                load_str = parts[1].strip() if len(parts) > 1 else ""
+                load_qcs = self._parse_qc_refs(load_str)
+            elif '-loadqc' in context_arg:
+                parts = context_arg.split('-loadqc')
+                context_arg = parts[0].strip()
+                load_str = parts[1].strip() if len(parts) > 1 else ""
+                load_qcs = self._parse_qc_refs(load_str)
+        
         # Auto-detect context from directory
         context = await self._detect_context(working_dir, context_arg)
         
@@ -207,6 +221,17 @@ Remember: QC mode is for discussion only - no file writes or command execution."
         
         # Load context files
         context_files = await self._load_context_files(context)
+        
+        # Load specific QCs if requested
+        loaded_qcs = []
+        if load_qcs:
+            loaded_qcs = await self._load_specific_qc_sessions(load_qcs)
+            logger.info(f"Loaded {len(loaded_qcs)} specific QC sessions: {load_qcs}")
+        
+        # Load recent QC sessions for reference (if no specific ones loaded)
+        recent_qcs = []
+        if not loaded_qcs:
+            recent_qcs = await self._load_recent_qc_sessions(limit=5)
         
         message = [
             "💬 Quick Chat Mode Active",
@@ -241,6 +266,24 @@ Remember: QC mode is for discussion only - no file writes or command execution."
                 message.append(f"  - {file}")
             if len(context_files) > 5:
                 message.append(f"  ... and {len(context_files) - 5} more")
+        
+        # Show loaded or recent QC sessions
+        if loaded_qcs:
+            message.append("")
+            message.append(f"📚 Loaded QC Sessions ({len(loaded_qcs)}):")
+            for qc in loaded_qcs:
+                message.append(f"  - {qc['id']}: {qc.get('title', 'No title')}")
+                if qc.get('summary'):
+                    message.append(f"    → {qc['summary'][:60]}...")
+                elif qc.get('key_insight'):
+                    message.append(f"    → {qc['key_insight'][:60]}...")
+        elif recent_qcs:
+            message.append("")
+            message.append("📖 Recent QC Sessions (for context):")
+            for qc in recent_qcs[:3]:  # Show last 3
+                message.append(f"  - {qc['id']}: {qc['title']}")
+                if qc.get('key_insight'):
+                    message.append(f"    → {qc['key_insight'][:60]}...")
         
         return ToolOutput(status="success", content="\n".join(message), content_type="text")
     
@@ -295,11 +338,18 @@ Remember: QC mode is for discussion only - no file writes or command execution."
             decisions = await self._extract_decisions()
             await self._save_to_memory(decisions)
             
+            # Save full session to qc/ folder
+            qc_file = await self._save_qc_session_file()
+            
+            message = "✅ Decisions saved to memory.\n"
+            message += "📝 Updated: .claude/memory.md\n"
+            if qc_file:
+                message += f"💾 QC Session: {qc_file}\n"
+            message += "🚪 Exited QC mode → Implementation mode"
+            
             return ToolOutput(
                 status="success",
-                content="✅ Decisions saved to memory.\n"
-                "📝 Updated: .claude/memory.md\n"
-                "🚪 Exited QC mode → Implementation mode",
+                content=message,
                 content_type="text"
             )
         
@@ -308,11 +358,22 @@ Remember: QC mode is for discussion only - no file writes or command execution."
             decisions = await self._extract_decisions()
             await self._save_to_memory(decisions)
             
+            # Save full session to qc/ folder
+            qc_file = await self._save_qc_session_file()
+            
+            # Offer to create task structure
+            task_offer = await self._offer_task_creation(arguments)
+            
+            message = "✅ Decisions saved to memory.\n"
+            if qc_file:
+                message += f"💾 QC Session: {qc_file}\n"
+            message += "🚀 Switching to implementation mode...\n"
+            message += f"{task_offer}\n"
+            message += "💡 Ready to execute discussed changes"
+            
             return ToolOutput(
                 status="success",
-                content="✅ Decisions saved to memory.\n"
-                "🚀 Switching to implementation mode...\n"
-                "💡 Ready to execute discussed changes",
+                content=message,
                 content_type="text"
             )
         
@@ -330,10 +391,17 @@ Remember: QC mode is for discussion only - no file writes or command execution."
             decisions = await self._extract_decisions()
             await self._save_to_memory(decisions)
             
+            # Save full session to qc/ folder
+            qc_file = await self._save_qc_session_file()
+            
+            message = "✅ Progress saved (checkpoint)\n"
+            if qc_file:
+                message += f"💾 QC Session: {qc_file}\n"
+            message += "💬 QC mode still active - continue chatting"
+            
             return ToolOutput(
                 status="success",
-                content="✅ Progress saved (checkpoint)\n"
-                "💬 QC mode still active - continue chatting",
+                content=message,
                 content_type="text"
             )
         
@@ -519,3 +587,384 @@ Remember: QC mode is for discussion only - no file writes or command execution."
             
         except Exception as e:
             logger.error(f"Failed to save to memory: {e}")
+    
+    async def _save_qc_session_file(self) -> Optional[str]:
+        """
+        Save QC session to permanent storage in qc/YYYY/MM/DD/ folder.
+        Returns the path to the saved file or None if save failed.
+        """
+        try:
+            # Get home directory
+            home = Path.home()
+            code_root = home / "code"
+            qc_dir = code_root / "qc"
+            template_file = qc_dir / "template-qc-session.md"
+            
+            # Check template exists
+            if not template_file.exists():
+                logger.error(f"QC template not found: {template_file}")
+                return None
+            
+            # Generate QC number and path
+            now = datetime.now()
+            year = now.strftime("%Y")
+            month = now.strftime("%m")
+            day = now.strftime("%d")
+            
+            # Create directory structure
+            qc_day_dir = qc_dir / year / month / day
+            qc_day_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Get next QC number for this month
+            qc_num = await self._get_next_qc_number(qc_dir, year, month)
+            
+            # Generate topic slug from session history
+            topic = "qc-session"
+            if self.session_history:
+                first_query = next((h for h in self.session_history if h.get('type') == 'query'), None)
+                if first_query:
+                    # Take first 50 chars and slugify
+                    topic_text = first_query['content'][:50]
+                    topic = topic_text.lower().replace(' ', '-')
+                    # Remove non-alphanumeric chars except hyphens
+                    topic = ''.join(c for c in topic if c.isalnum() or c == '-')
+                    topic = topic.strip('-')
+            
+            # Create filename
+            filename = qc_day_dir / f"QC-{qc_num:03d}-{topic}.md"
+            
+            # Read template
+            template_content = template_file.read_text(encoding='utf-8')
+            
+            # Calculate duration
+            duration_minutes = 0
+            if self.session_start:
+                duration_seconds = (datetime.now() - self.session_start).total_seconds()
+                duration_minutes = int(duration_seconds / 60)
+            
+            # Get context info
+            context_name = self.context_loaded.get('name', 'workspace') if self.context_loaded else 'workspace'
+            context_type = self.context_loaded.get('type', 'general') if self.context_loaded else 'general'
+            
+            # Replace placeholders
+            content = template_content
+            content = content.replace("QC-NNN", f"QC-{qc_num:03d}")
+            content = content.replace("YYYY-MM-DD", now.strftime("%Y-%m-%d"))
+            content = content.replace("HH:MM", now.strftime("%H:%M"))
+            content = content.replace("XXmin", f"{duration_minutes}min")
+            content = content.replace("Session Title", topic.replace('-', ' ').title())
+            
+            # Add session notes
+            if self.session_history:
+                notes_section = "\n## Discussion Notes\n\n"
+                for item in self.session_history:
+                    if item.get('type') == 'query':
+                        notes_section += f"**Q**: {item.get('content', '')}\n\n"
+                
+                # Insert after "## Discussion Notes" section
+                content = content.replace(
+                    "## Discussion Notes\n\n[Your thinking, exploration, design work...]",
+                    notes_section
+                )
+            
+            # Write file
+            filename.write_text(content, encoding='utf-8')
+            
+            logger.info(f"✅ Saved QC session to {filename}")
+            return str(filename)
+            
+        except Exception as e:
+            logger.error(f"Failed to save QC session file: {e}", exc_info=True)
+            return None
+    
+    async def _get_next_qc_number(self, qc_dir: Path, year: str, month: str) -> int:
+        """Get next QC number for the given month"""
+        try:
+            qc_month_dir = qc_dir / year / month
+            
+            if not qc_month_dir.exists():
+                return 1
+            
+            # Find all QC-*.md files in this month (across all days)
+            qc_files = list(qc_month_dir.rglob("QC-*.md"))
+            
+            if not qc_files:
+                return 1
+            
+            # Extract numbers and find highest
+            numbers = []
+            for qc_file in qc_files:
+                # Extract number from QC-NNN-topic.md format
+                parts = qc_file.stem.split('-')
+                if len(parts) >= 2 and parts[0] == 'QC':
+                    try:
+                        numbers.append(int(parts[1]))
+                    except ValueError:
+                        continue
+            
+            if numbers:
+                return max(numbers) + 1
+            return 1
+            
+        except Exception as e:
+            logger.error(f"Error getting next QC number: {e}")
+            return 1
+    
+    async def _load_recent_qc_sessions(self, limit: int = 5) -> list[dict[str, Any]]:
+        """
+        Load recent QC sessions for context reference.
+        Returns list of QC session summaries with id, title, date, key insight.
+        """
+        try:
+            home = Path.home()
+            qc_dir = home / "code" / "qc"
+            
+            if not qc_dir.exists():
+                return []
+            
+            # Find all QC-*.md files (excluding template and archived)
+            qc_files = []
+            for year_dir in sorted((qc_dir / "2025").iterdir(), reverse=True):
+                if not year_dir.is_dir():
+                    continue
+                for month_dir in sorted(year_dir.iterdir(), reverse=True):
+                    if not month_dir.is_dir():
+                        continue
+                    for day_dir in sorted(month_dir.iterdir(), reverse=True):
+                        if not day_dir.is_dir():
+                            continue
+                        for qc_file in sorted(day_dir.glob("QC-*.md"), reverse=True):
+                            qc_files.append(qc_file)
+                            if len(qc_files) >= limit:
+                                break
+                        if len(qc_files) >= limit:
+                            break
+                    if len(qc_files) >= limit:
+                        break
+                if len(qc_files) >= limit:
+                    break
+            
+            # Parse each QC file
+            sessions = []
+            for qc_file in qc_files[:limit]:
+                try:
+                    content = qc_file.read_text(encoding='utf-8')
+                    
+                    # Extract YAML frontmatter
+                    if content.startswith('---'):
+                        parts = content.split('---', 2)
+                        if len(parts) >= 3:
+                            frontmatter = parts[1]
+                            body = parts[2]
+                            
+                            # Parse basic fields
+                            qc_id = None
+                            qc_date = None
+                            for line in frontmatter.split('\n'):
+                                if line.startswith('id:'):
+                                    qc_id = line.split(':', 1)[1].strip()
+                                elif line.startswith('date:'):
+                                    qc_date = line.split(':', 1)[1].strip()
+                            
+                            # Extract title from first h1
+                            title = "Unknown"
+                            for line in body.split('\n'):
+                                if line.startswith('# '):
+                                    title = line[2:].strip()
+                                    # Remove QC-XXX: prefix if present
+                                    if ':' in title:
+                                        title = title.split(':', 1)[1].strip()
+                                    break
+                            
+                            # Extract first insight/key point
+                            key_insight = None
+                            in_insights = False
+                            for line in body.split('\n'):
+                                if '## Insights' in line:
+                                    in_insights = True
+                                    continue
+                                if in_insights and line.startswith('💡'):
+                                    key_insight = line.replace('💡', '').replace('**', '').strip()
+                                    # Remove "Key Insight:" prefix if present
+                                    if ':' in key_insight:
+                                        key_insight = key_insight.split(':', 1)[1].strip()
+                                    break
+                                if in_insights and line.startswith('##'):
+                                    break
+                            
+                            if qc_id:
+                                sessions.append({
+                                    'id': qc_id,
+                                    'title': title,
+                                    'date': qc_date or 'unknown',
+                                    'key_insight': key_insight,
+                                    'file': str(qc_file)
+                                })
+                
+                except Exception as e:
+                    logger.error(f"Error parsing QC file {qc_file}: {e}")
+                    continue
+            
+            return sessions
+            
+        except Exception as e:
+            logger.error(f"Error loading recent QC sessions: {e}")
+            return []
+    
+    def _parse_qc_refs(self, load_str: str) -> list[str]:
+        """
+        Parse QC references from various formats.
+        
+        Accepts:
+        - "002 003" → ["QC-002", "QC-003"]
+        - "QC-002,QC-005" → ["QC-002", "QC-005"]
+        - "2,5" → ["QC-002", "QC-005"]
+        - "QC-002 QC-005" → ["QC-002", "QC-005"]
+        
+        Returns list of normalized QC IDs.
+        """
+        if not load_str:
+            return []
+        
+        refs = []
+        # Replace commas with spaces for consistent parsing
+        normalized = load_str.replace(',', ' ')
+        
+        for ref in normalized.split():
+            ref = ref.strip()
+            if not ref:
+                continue
+            
+            if ref.startswith('QC-'):
+                # Already in full format
+                refs.append(ref)
+            else:
+                # Convert short format to full
+                try:
+                    num = int(ref)
+                    refs.append(f"QC-{num:03d}")
+                except ValueError:
+                    logger.warning(f"Invalid QC reference: {ref}")
+                    continue
+        
+        return refs
+    
+    async def _load_specific_qc_sessions(self, qc_ids: list[str]) -> list[dict[str, Any]]:
+        """
+        Load specific QC sessions by ID.
+        
+        Args:
+            qc_ids: List of QC IDs like ["QC-002", "QC-005"]
+        
+        Returns:
+            List of QC session dictionaries with metadata
+        """
+        sessions = []
+        
+        home = Path.home()
+        qc_dir = home / "code" / "qc"
+        
+        if not qc_dir.exists():
+            logger.warning(f"QC directory not found: {qc_dir}")
+            return []
+        
+        for qc_id in qc_ids:
+            try:
+                # Search for QC file (could be in any date folder)
+                qc_files = list(qc_dir.rglob(f"{qc_id}-*.md"))
+                
+                if not qc_files:
+                    logger.warning(f"QC session not found: {qc_id}")
+                    continue
+                
+                # Use the first match (should only be one)
+                qc_file = qc_files[0]
+                content = qc_file.read_text(encoding='utf-8')
+                
+                # Parse YAML header
+                if not content.startswith('---'):
+                    logger.warning(f"QC file has no YAML header: {qc_file}")
+                    continue
+                
+                parts = content.split('---', 2)
+                if len(parts) < 3:
+                    logger.warning(f"QC file has invalid format: {qc_file}")
+                    continue
+                
+                frontmatter = parts[1]
+                body = parts[2]
+                
+                # Parse basic YAML fields manually
+                qc_data = {'id': qc_id, 'file': str(qc_file)}
+                
+                for line in frontmatter.split('\n'):
+                    line = line.strip()
+                    if ':' in line:
+                        key, value = line.split(':', 1)
+                        key = key.strip()
+                        value = value.strip().strip('"')
+                        
+                        if key in ['id', 'date', 'time', 'duration', 'type', 'action', 'outcome', 'status']:
+                            qc_data[key] = value
+                
+                # Extract title from first h1
+                title = "Unknown"
+                for line in body.split('\n'):
+                    if line.startswith('# '):
+                        title = line[2:].strip()
+                        # Remove QC-XXX: prefix if present
+                        if ':' in title:
+                            title = title.split(':', 1)[1].strip()
+                        break
+                
+                qc_data['title'] = title
+                
+                # Extract summary if available
+                if '## Session Context' in body:
+                    context_section = body.split('## Session Context', 1)[1]
+                    context_section = context_section.split('##', 1)[0]
+                    # First paragraph as summary
+                    paragraphs = [p.strip() for p in context_section.split('\n\n') if p.strip()]
+                    if paragraphs:
+                        qc_data['summary'] = paragraphs[0][:200]
+                
+                sessions.append(qc_data)
+                logger.info(f"Loaded QC session: {qc_id} from {qc_file}")
+                
+            except Exception as e:
+                logger.error(f"Error loading QC {qc_id}: {e}", exc_info=True)
+                continue
+        
+        return sessions
+    
+    async def _offer_task_creation(self, arguments: dict[str, Any]) -> str:
+        """Offer to create task structure using task-create.sh"""
+        
+        # Get context info
+        context = self.context_loaded or {}
+        context_name = context.get('name', 'unknown')
+        
+        # Extract title from session history
+        title = "Implementation from QC"
+        if self.session_history:
+            first_query = next((h for h in self.session_history if h.get('type') == 'query'), None)
+            if first_query:
+                title = first_query['content'][:50]
+        
+        # Detect complexity from session length
+        query_count = len([h for h in self.session_history if h.get('type') == 'query'])
+        complexity = "medium"
+        if query_count > 10:
+            complexity = "high"
+        elif query_count > 20:
+            complexity = "critical"
+        
+        return (
+            f"📋 Task Details from QC:\n"
+            f"   Title: {title}\n"
+            f"   Complexity: {complexity}\n"
+            f"   Context: {context_name}\n"
+            f"\n"
+            f"💡 To create task structure:\n"
+            f"   ~/code/scripts/task-create.sh [day] \"{title}\" {complexity}"
+        )
