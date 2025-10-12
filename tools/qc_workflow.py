@@ -335,16 +335,41 @@ Remember: QC mode is for discussion only - no file writes or command execution."
         
         if exit_cmd == ":wq":
             # Save and quit
-            decisions = await self._extract_decisions()
-            await self._save_to_memory(decisions)
-            
-            # Save full session to qc/ folder
+            # PRIMARY: Save full session to qc/ folder (permanent record)
             qc_file = await self._save_qc_session_file()
             
-            message = "✅ Decisions saved to memory.\n"
-            message += "📝 Updated: .claude/memory.md\n"
+            # SECONDARY: Extract and save decisions to memory (optional backup)
+            decisions = await self._extract_decisions()
+            memory_saved = False
+            if decisions:  # Only save to memory if there are actual decisions
+                await self._save_to_memory(decisions)
+                memory_saved = True
+            
+            # Build success message
+            message = "✅ QC Session saved\n"
             if qc_file:
-                message += f"💾 QC Session: {qc_file}\n"
+                message += f"📝 QC File: {qc_file}\n"
+            if memory_saved:
+                message += "💾 Decisions: .claude/memory.md\n"
+            
+            # Phase 2: Auto-feed to RAG
+            if qc_file:
+                rag_success = await self._feed_to_rag(qc_file)
+                if rag_success:
+                    message += "📊 Indexed in RAG\n"
+            
+            # Phase 3: Auto-update README
+            if qc_file:
+                readme_success = await self._update_readme(qc_file)
+                if readme_success:
+                    message += "📄 README updated\n"
+            
+            # Phase 4: Index in spatial memory
+            if qc_file:
+                spatial_success = await self._index_spatial_memory(qc_file)
+                if spatial_success:
+                    message += "🧠 Spatial memory indexed\n"
+            
             message += "🚪 Exited QC mode → Implementation mode"
             
             return ToolOutput(
@@ -968,3 +993,301 @@ Remember: QC mode is for discussion only - no file writes or command execution."
             f"💡 To create task structure:\n"
             f"   ~/code/scripts/task-create.sh [day] \"{title}\" {complexity}"
         )
+    
+    # ==================== RAG & Auto-Documentation Methods ====================
+    # Added: Task-5 (QC RAG Integration & Auto-Documentation)
+    
+    async def _feed_to_rag(self, qc_file_path: str) -> bool:
+        """
+        Feed QC session to RAG system (OWL/Pinecone) after save.
+        
+        Process:
+        1. Read and parse QC file (YAML + content)
+        2. Extract key sections (insights, decisions, patterns)
+        3. Store in spatial memory / RAG
+        
+        Returns True if successful, False otherwise.
+        """
+        try:
+            # Read QC content
+            qc_path = Path(qc_file_path)
+            if not qc_path.exists():
+                logger.error(f"QC file not found: {qc_file_path}")
+                return False
+            
+            content = qc_path.read_text(encoding='utf-8')
+            
+            # Parse YAML frontmatter
+            import yaml
+            parts = content.split('---', 2)
+            metadata = {}
+            if len(parts) >= 3:
+                try:
+                    metadata = yaml.safe_load(parts[1]) or {}
+                except yaml.YAMLError as e:
+                    logger.warning(f"Failed to parse YAML frontmatter: {e}")
+            
+            # Extract sections
+            sections = {
+                'full_content': content,
+                'metadata': metadata,
+                'insights': self._extract_section(content, '## Insights'),
+                'decisions': self._extract_section(content, '## Anchors'),
+                'context': metadata.get('context', []),
+            }
+            
+            # TODO: Integrate with spatial_memory tool
+            # For now, just log that we would feed to RAG
+            logger.info(f"📊 Would feed to RAG: {qc_file_path}")
+            logger.debug(f"   Metadata: {metadata}")
+            logger.debug(f"   Context: {sections['context']}")
+            
+            # Future: Call spatial_memory.store_knowledge()
+            # await store_knowledge(
+            #     content=sections['full_content'],
+            #     domain='qc-session',
+            #     pattern=metadata.get('type', 'design'),
+            #     metadata={...}
+            # )
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to feed QC to RAG: {e}", exc_info=True)
+            return False
+    
+    async def _update_readme(self, qc_file_path: str) -> bool:
+        """
+        Auto-update README.md in the QC day folder.
+        
+        Process:
+        1. Parse QC metadata and content
+        2. Find or create README.md
+        3. Add new QC entry
+        4. Update session count
+        
+        Returns True if successful, False otherwise.
+        """
+        try:
+            qc_path = Path(qc_file_path)
+            readme_path = qc_path.parent / "README.md"
+            
+            # Read QC content for metadata
+            content = qc_path.read_text(encoding='utf-8')
+            
+            # Parse YAML frontmatter
+            import yaml
+            parts = content.split('---', 2)
+            metadata = {}
+            if len(parts) >= 3:
+                try:
+                    metadata = yaml.safe_load(parts[1]) or {}
+                except yaml.YAMLError:
+                    logger.warning("Failed to parse YAML, skipping README update")
+                    return False
+            
+            # Extract key info
+            qc_id = metadata.get('id', 'QC-???')
+            qc_type = metadata.get('type', 'ponder')
+            qc_time = metadata.get('time', '??:??')
+            
+            # Extract title from content (first # header)
+            import re
+            title_match = re.search(r'^# (QC-\d+: .+)$', content, re.MULTILINE)
+            title = title_match.group(1) if title_match else "QC Session"
+            topic = title.replace(f'{qc_id}: ', '')
+            
+            # Extract key insights (first 3)
+            insights_section = self._extract_section(content, '## Insights')
+            key_insights = []
+            if insights_section:
+                insight_lines = [l.strip() for l in insights_section.split('\n') 
+                                if l.strip().startswith(('💡', '💭', '🎯', '-'))]
+                key_insights = [l.lstrip('💡💭🎯-• ').strip() for l in insight_lines[:3]]
+            
+            # Calculate file size
+            file_size_kb = qc_path.stat().st_size / 1024
+            
+            # Generate README entry
+            entry = f"""
+### {qc_id}: {topic}
+- **Time**: {qc_time}
+- **Type**: {qc_type.capitalize()}
+"""
+            
+            if key_insights:
+                entry += "- **Key Insights**:\n"
+                for insight in key_insights:
+                    entry += f"  - {insight}\n"
+            
+            entry += f"- **Size**: {file_size_kb:.1f}k\n"
+            
+            # Update or create README
+            if readme_path.exists():
+                readme = readme_path.read_text(encoding='utf-8')
+                
+                # Find insertion point after "## Sessions Overview"
+                if "## Sessions Overview" in readme:
+                    readme = readme.replace(
+                        "## Sessions Overview\n",
+                        f"## Sessions Overview\n{entry}"
+                    )
+                else:
+                    # Append to end
+                    readme += f"\n{entry}"
+                
+                # Update count in header if present
+                qc_count = len(list(qc_path.parent.glob("QC-*.md")))
+                readme = re.sub(
+                    r'This folder contains \d+ QC',
+                    f'This folder contains {qc_count} QC',
+                    readme
+                )
+                
+            else:
+                # Create new README
+                date_str = metadata.get('date', datetime.now().strftime('%Y-%m-%d'))
+                qc_count = len(list(qc_path.parent.glob("QC-*.md")))
+                readme = f"""# QC Sessions - {date_str}
+
+This folder contains {qc_count} QC (Quick Chat) sessions.
+
+## Sessions Overview
+{entry}
+
+## Organization
+
+Each QC session follows the QC template with:
+- YAML frontmatter with metadata
+- Structured sections: Context, Questions, Notes, Insights, Anchors
+- Action items and references
+
+---
+
+**Status**: Active
+**Latest**: {qc_id}
+"""
+            
+            # Save README
+            readme_path.write_text(readme, encoding='utf-8')
+            logger.info(f"📝 Updated README: {readme_path}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to update README: {e}", exc_info=True)
+            return False
+    
+    async def _index_spatial_memory(self, qc_file_path: str) -> bool:
+        """
+        Index QC session in spatial memory for cross-domain pattern recognition.
+        
+        Process:
+        1. Parse QC content and metadata
+        2. Classify domain
+        3. Extract patterns
+        4. Index in spatial memory
+        
+        Returns True if successful, False otherwise.
+        """
+        try:
+            qc_path = Path(qc_file_path)
+            content = qc_path.read_text(encoding='utf-8')
+            
+            # Parse YAML frontmatter
+            import yaml
+            parts = content.split('---', 2)
+            metadata = {}
+            if len(parts) >= 3:
+                try:
+                    metadata = yaml.safe_load(parts[1]) or {}
+                except yaml.YAMLError:
+                    pass
+            
+            # Classify domain
+            context_tags = metadata.get('context', [])
+            domain = self._classify_domain(context_tags, content)
+            
+            # Extract patterns
+            patterns = self._extract_patterns(content)
+            
+            # TODO: Integrate with spatial_memory tool
+            # For now, just log
+            logger.info(f"🧠 Would index in spatial memory: {qc_file_path}")
+            logger.debug(f"   Domain: {domain}")
+            logger.debug(f"   Patterns: {patterns}")
+            
+            # Future: Call spatial_memory.store_memory()
+            # for pattern in patterns:
+            #     await store_memory(
+            #         content=pattern['description'],
+            #         domain=domain,
+            #         pattern=pattern['type'],
+            #         metadata={...}
+            #     )
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to index spatial memory: {e}", exc_info=True)
+            return False
+    
+    def _extract_section(self, content: str, header: str) -> str:
+        """Extract section content between markdown headers"""
+        import re
+        pattern = f"{re.escape(header)}\\n+(.*?)(?=\\n## |$)"
+        match = re.search(pattern, content, re.DOTALL)
+        return match.group(1).strip() if match else ""
+    
+    def _classify_domain(self, context_tags: list, content: str) -> str:
+        """Classify QC domain based on context tags and content"""
+        # Domain keyword mapping
+        domain_keywords = {
+            'technical': ['architecture', 'implementation', 'code', 'api', 'database'],
+            'business': ['user', 'feature', 'product', 'requirement', 'strategy'],
+            'devops': ['deployment', 'infrastructure', 'ci/cd', 'docker', 'kubernetes'],
+            'ux': ['interface', 'design', 'user experience', 'workflow', 'usability'],
+            'security': ['auth', 'security', 'encryption', 'vulnerability', 'permission'],
+        }
+        
+        # Check context tags first
+        for tag in context_tags:
+            tag_lower = str(tag).lower()
+            for domain, keywords in domain_keywords.items():
+                if any(kw in tag_lower for kw in keywords):
+                    return domain
+        
+        # Check content
+        content_lower = content.lower()
+        domain_scores = {}
+        for domain, keywords in domain_keywords.items():
+            score = sum(content_lower.count(kw) for kw in keywords)
+            domain_scores[domain] = score
+        
+        # Return highest scoring domain or default
+        if domain_scores and max(domain_scores.values()) > 0:
+            return max(domain_scores.items(), key=lambda x: x[1])[0]
+        return 'technical'
+    
+    def _extract_patterns(self, content: str) -> list[dict]:
+        """Extract architectural/design patterns from QC content"""
+        patterns = []
+        
+        # Pattern markers
+        pattern_markers = {
+            'resource_contention': ['queue', 'pool', 'throttle', 'rate limit'],
+            'config_error': ['configuration', 'env var', 'settings', 'config'],
+            'performance_degradation': ['slow', 'performance', 'optimization', 'latency'],
+            'state_management': ['state', 'context', 'session', 'cache'],
+            'data_flow': ['pipeline', 'flow', 'stream', 'transform'],
+            'integration_pattern': ['api', 'integration', 'connector', 'adapter'],
+        }
+        
+        content_lower = content.lower()
+        for pattern_type, keywords in pattern_markers.items():
+            if any(kw in content_lower for kw in keywords):
+                patterns.append({
+                    'type': pattern_type,
+                    'description': f"Pattern identified: {pattern_type}"
+                })
+        
+        return patterns

@@ -37,6 +37,8 @@ from .webfetch import WebFetchTool
 from .youtube_transcribe import YouTubeTranscribeTool
 from .wikipedia import WikipediaTool
 from .qc_workflow import QCWorkflowTool
+from .qc_search import QCSearchTool
+from .qc_merge_validator import QCMergeValidatorTool
 
 __all__ = [
     "ThinkDeepTool",
@@ -74,4 +76,6 @@ __all__ = [
     "YouTubeTranscribeTool",
     "WikipediaTool",
     "QCWorkflowTool",
+    "QCSearchTool",
+    "QCMergeValidatorTool",
 ]

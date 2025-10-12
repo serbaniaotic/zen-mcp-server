@@ -80,6 +80,8 @@ from tools import (  # noqa: E402
     YouTubeTranscribeTool,
     WikipediaTool,
     QCWorkflowTool,
+    QCSearchTool,
+    QCMergeValidatorTool,
 )
 from tools.models import ToolOutput  # noqa: E402
 from utils.env import env_override_enabled, get_env  # noqa: E402
@@ -313,6 +315,8 @@ TOOLS = {
     "youtube_transcribe": _safe_init_tool(YouTubeTranscribeTool, "youtube_transcribe"),
     "wikipedia": _safe_init_tool(WikipediaTool, "wikipedia"),
     "qc_workflow": _safe_init_tool(QCWorkflowTool, "qc_workflow"),
+    "qc_search": _safe_init_tool(QCSearchTool, "qc_search"),
+    "qc_merge_validator": _safe_init_tool(QCMergeValidatorTool, "qc_merge_validator"),
 }
 
 # Remove None values (failed initializations)

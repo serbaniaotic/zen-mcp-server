@@ -19,10 +19,8 @@ import uvicorn
 sys.path.insert(0, str(Path(__file__).parent))
 
 from routing.intelligent_router import IntelligentRouter
-from routing.server_integration import RouterIntegration
 from utils.analytics import ZenAnalytics
-from tools import TOOLS
-from config import configure_providers
+from tools import ChatTool, ThinkDeepTool, DebugIssueTool, CLinkTool, ConsensusTool, PlannerTool
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -47,6 +45,16 @@ app.add_middleware(
 # Global instances
 router: Optional[IntelligentRouter] = None
 analytics: Optional[ZenAnalytics] = None
+
+# Tool registry for HTTP bridge
+TOOLS = {
+    "chat": ChatTool,
+    "thinkdeep": ThinkDeepTool,
+    "debug": DebugIssueTool,
+    "clink": CLinkTool,
+    "consensus": ConsensusTool,
+    "planner": PlannerTool,
+}
 
 
 class ChatRequest(BaseModel):
@@ -82,8 +90,7 @@ async def startup():
     
     logger.info("🚀 Starting Zen-MCP HTTP Bridge...")
     
-    # Configure providers (API keys, etc.)
-    configure_providers()
+    # Note: Model providers are configured by individual tools as needed
     
     # Initialize analytics
     try:
