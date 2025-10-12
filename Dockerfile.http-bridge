@@ -1,0 +1,32 @@
+# Zen-MCP HTTP Bridge - Lightweight FastAPI wrapper
+# Provides REST API access to zen-mcp tools for voice-QC
+
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    git \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements
+COPY requirements.txt requirements-dev.txt ./
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy zen-mcp source
+COPY . .
+
+# Expose HTTP bridge port
+EXPOSE 8766
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:8766/health || exit 1
+
+# Run HTTP bridge
+CMD ["python", "http_bridge.py"]
+
