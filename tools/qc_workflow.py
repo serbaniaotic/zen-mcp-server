@@ -11,8 +11,12 @@ Implements /qc command functionality:
 Design: Day 4 Task-5 (qc-command-specification.md)
 Validation: Day 5 Task-6 (smart-qc-full-stack-test)
 Implementation: Day 5 Task-7 (recursive-qc with TRM patterns)
+
+IMPORTANT: This is the personal QC workflow for dingo's learning.
+For collaborative sessions, use qc_collaborative_workflow.py instead.
 """
 
+import json
 import logging
 import os
 from pathlib import Path
@@ -54,6 +58,9 @@ class QCWorkflowTool(BaseTool):
         self.session_start = None
         self.session_id = None
         
+        # Session persistence to survive context window resets
+        self.session_file = Path.home() / "code" / ".claude" / "qc_session.json"
+        
         # Centralized prompt library (Task-8)
         home = os.path.expanduser("~")
         self.prompt_library = Path(home) / ".mcp" / "prompts"
@@ -63,6 +70,75 @@ class QCWorkflowTool(BaseTool):
         
         # Usage tracker (Task-8 Phase 2.2)
         self.usage_tracker = UsageTracker()
+        
+        # Try to restore previous session on initialization
+        self._restore_session_if_exists()
+    
+    def _save_session_state(self) -> None:
+        """Save current session state to persistent storage"""
+        try:
+            if not self.session_id:
+                return  # No active session to save
+                
+            session_data = {
+                "session_id": self.session_id,
+                "session_start": self.session_start.isoformat() if self.session_start else None,
+                "session_history": self.session_history,
+                "context_loaded": self.context_loaded,
+                "saved_at": datetime.now().isoformat()
+            }
+            
+            # Ensure directory exists
+            self.session_file.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Save to file
+            with open(self.session_file, 'w', encoding='utf-8') as f:
+                json.dump(session_data, f, indent=2, ensure_ascii=False)
+                
+            logger.debug(f"Saved QC session state: {self.session_id}")
+            
+        except Exception as e:
+            logger.error(f"Failed to save session state: {e}")
+    
+    def _restore_session_if_exists(self) -> None:
+        """Restore session state if it exists and is recent (within 24 hours)"""
+        try:
+            if not self.session_file.exists():
+                return
+                
+            with open(self.session_file, 'r', encoding='utf-8') as f:
+                session_data = json.load(f)
+            
+            # Check if session is recent (within 24 hours)
+            saved_at = datetime.fromisoformat(session_data.get("saved_at", ""))
+            if (datetime.now() - saved_at).total_seconds() > 24 * 3600:
+                logger.debug("Existing QC session too old, starting fresh")
+                self._clear_session_file()
+                return
+            
+            # Restore session state
+            self.session_id = session_data.get("session_id")
+            self.session_history = session_data.get("session_history", [])
+            self.context_loaded = session_data.get("context_loaded")
+            
+            session_start_str = session_data.get("session_start")
+            if session_start_str:
+                self.session_start = datetime.fromisoformat(session_start_str)
+            
+            logger.info(f"Restored QC session: {self.session_id} with {len(self.session_history)} entries")
+            
+        except Exception as e:
+            logger.debug(f"Could not restore session (starting fresh): {e}")
+            self._clear_session_file()
+    
+    def _clear_session_file(self) -> None:
+        """Clear the persistent session file"""
+        try:
+            if self.session_file.exists():
+                self.session_file.unlink()
+                logger.debug("Cleared QC session file")
+        except Exception as e:
+            logger.error(f"Failed to clear session file: {e}")
     
     def get_name(self) -> str:
         return "qc_workflow"
@@ -208,6 +284,9 @@ Remember: QC mode is for discussion only - no file writes or command execution."
         self.session_start = datetime.now()
         self.session_id = f"qc-{self.session_start.strftime('%Y%m%d_%H%M%S')}"
         
+        # Save session state for persistence across context resets
+        self._save_session_state()
+        
         # Track QC session start (Task-8 Phase 2.2)
         self.usage_tracker.track_usage(
             prompt_id="qc-analysis",  # Default prompt for QC mode
@@ -288,30 +367,121 @@ Remember: QC mode is for discussion only - no file writes or command execution."
         return ToolOutput(status="success", content="\n".join(message), content_type="text")
     
     async def _handle_query(self, arguments: dict[str, Any]) -> ToolOutput:
-        """Handle query in QC mode"""
+        """Handle query in QC mode with proper chat functionality"""
         
         query = arguments.get("query")
         
         if not query:
             return ToolOutput(status="error", content="Query is required", content_type="text")
         
-        # Add to session history
+        # Add query to session history
         self.session_history.append({
             "type": "query",
             "content": query,
             "timestamp": datetime.now().isoformat()
         })
         
-        # For now, just acknowledge the query
-        # In the future, this could use RecursiveQueryHandler
-        response = [
-            f"📝 Query recorded: {query[:80]}{'...' if len(query) > 80 else ''}",
-            "",
-            "💡 In QC mode - discussion only",
-            f"📊 Session queries: {len([h for h in self.session_history if h['type'] == 'query'])}",
-        ]
+        # Generate contextual response
+        try:
+            logger.info(f"DEBUG: Attempting to generate QC response for query: {query[:50]}")
+            response_content = await self._generate_qc_response(query)
+            logger.info(f"DEBUG: Generated response content: {response_content[:100]}")
+            
+            # Add response to session history
+            self.session_history.append({
+                "type": "response",
+                "content": response_content,
+                "timestamp": datetime.now().isoformat()
+            })
+            logger.info(f"DEBUG: Added response to session history. Total entries: {len(self.session_history)}")
+            
+            # Save session state after each Q&A cycle
+            self._save_session_state()
+            
+            # Format output for user
+            response = [
+                f"**Q**: {query}",
+                "",
+                f"**A**: {response_content}",
+                "",
+                f"📊 Session entries: {len(self.session_history)} | Queries: {len([h for h in self.session_history if h['type'] == 'query'])}",
+            ]
+            
+            return ToolOutput(status="success", content="\n".join(response), content_type="text")
+            
+        except Exception as e:
+            logger.error(f"Error generating QC response: {e}", exc_info=True)
+            # Fallback to simple acknowledgment
+            response = [
+                f"📝 Query recorded: {query[:80]}{'...' if len(query) > 80 else ''}",
+                "",
+                f"⚠️ Discussion mode active but response generation failed: {str(e)}",
+                f"📊 Session queries: {len([h for h in self.session_history if h['type'] == 'query'])}",
+            ]
+            
+            return ToolOutput(status="success", content="\n".join(response), content_type="text")
+    
+    async def _generate_qc_response(self, query: str) -> str:
+        """Generate a contextual response to the user's QC query"""
         
-        return ToolOutput(status="success", content="\n".join(response), content_type="text")
+        # Build context from session history and loaded context
+        context_parts = []
+        
+        # Add context information
+        if self.context_loaded:
+            context_parts.append(f"Context: {self.context_loaded.get('name', 'workspace')} ({self.context_loaded.get('type', 'general')})")
+        
+        # Add recent session history for continuity
+        recent_entries = self.session_history[-6:] if len(self.session_history) > 6 else self.session_history
+        if recent_entries:
+            context_parts.append("Recent discussion:")
+            for entry in recent_entries[-3:]:  # Last 3 entries for context
+                if entry.get('type') == 'query':
+                    context_parts.append(f"  Q: {entry.get('content', '')[:100]}")
+                elif entry.get('type') == 'response':
+                    context_parts.append(f"  A: {entry.get('content', '')[:100]}")
+        
+        # Create a prompt for the response
+        system_context = "\n".join(context_parts) if context_parts else "General QC session"
+        
+        # Generate response using a simple heuristic approach for now
+        # In the future, this could integrate with the chat tool or other AI providers
+        response = await self._generate_contextual_response(query, system_context)
+        
+        return response
+    
+    async def _generate_contextual_response(self, query: str, context: str) -> str:
+        """Generate a contextual response using simple heuristics"""
+        
+        query_lower = query.lower()
+        
+        # Architecture/design questions
+        if any(word in query_lower for word in ['architecture', 'design', 'pattern', 'structure', 'approach']):
+            return f"Let's think through the architectural considerations for '{query}'. What are the key components, data flows, and integration points? Consider scalability, maintainability, and the broader system context."
+        
+        # Implementation questions  
+        elif any(word in query_lower for word in ['implement', 'code', 'build', 'create', 'develop']):
+            return f"For implementing '{query}', let's break this down: What's the core functionality needed? What are the dependencies and constraints? Should we start with a minimal viable approach or need a more comprehensive solution?"
+        
+        # Problem-solving questions
+        elif any(word in query_lower for word in ['problem', 'issue', 'bug', 'error', 'fix', 'troubleshoot']):
+            return f"To address this problem: '{query}', let's diagnose the root cause. What symptoms are you seeing? What has been tried already? What would be the ideal outcome?"
+        
+        # Process/workflow questions
+        elif any(word in query_lower for word in ['workflow', 'process', 'steps', 'how to', 'procedure']):
+            return f"For the workflow question '{query}', let's map out the key steps and decision points. What are the inputs, outputs, and potential bottlenecks? How does this fit into the broader process?"
+        
+        # Integration questions
+        elif any(word in query_lower for word in ['integrate', 'connect', 'api', 'interface', 'protocol']):
+            return f"Regarding integration: '{query}', what systems need to communicate? What data formats and protocols make sense? Consider authentication, error handling, and monitoring needs."
+        
+        # Performance questions
+        elif any(word in query_lower for word in ['performance', 'optimize', 'scale', 'speed', 'latency']):
+            return f"For performance considerations around '{query}', let's identify the bottlenecks and measurement criteria. What are the current metrics vs. target performance? Where are the optimization opportunities?"
+        
+        # General exploration
+        else:
+            return f"Exploring '{query}' - what specific aspects are you most curious about? What outcomes or insights are you hoping to gain? Let's dig deeper into the key questions and considerations."
     
     async def _exit_qc_mode(self, arguments: dict[str, Any]) -> ToolOutput:
         """Exit QC mode with vim-style command"""
@@ -372,6 +542,9 @@ Remember: QC mode is for discussion only - no file writes or command execution."
             
             message += "🚪 Exited QC mode → Implementation mode"
             
+            # Clear session state after successful save
+            self._clear_session_file()
+            
             return ToolOutput(
                 status="success",
                 content=message,
@@ -396,6 +569,9 @@ Remember: QC mode is for discussion only - no file writes or command execution."
             message += f"{task_offer}\n"
             message += "💡 Ready to execute discussed changes"
             
+            # Clear session state after successful save
+            self._clear_session_file()
+            
             return ToolOutput(
                 status="success",
                 content=message,
@@ -404,6 +580,7 @@ Remember: QC mode is for discussion only - no file writes or command execution."
         
         elif exit_cmd == ":q":
             # Quit without saving
+            self._clear_session_file()
             return ToolOutput(
                 status="success",
                 content="🚪 Exited QC mode (no save)\n"
@@ -433,6 +610,7 @@ Remember: QC mode is for discussion only - no file writes or command execution."
         elif exit_cmd == ":q!":
             # Force quit
             self.session_history = []
+            self._clear_session_file()
             return ToolOutput(
                 status="success",
                 content="⚠️  Force quit - session discarded\n"
@@ -682,14 +860,28 @@ Remember: QC mode is for discussion only - no file writes or command execution."
             # Add session notes
             if self.session_history:
                 notes_section = "\n## Discussion Notes\n\n"
+                
+                # Process all session history entries in chronological order
                 for item in self.session_history:
-                    if item.get('type') == 'query':
-                        notes_section += f"**Q**: {item.get('content', '')}\n\n"
+                    entry_type = item.get('type', '')
+                    content_text = item.get('content', '')
+                    
+                    if entry_type == 'query':
+                        notes_section += f"**Q**: {content_text}\n\n"
+                    elif entry_type == 'response':
+                        notes_section += f"**A**: {content_text}\n\n"
                 
                 # Insert after "## Discussion Notes" section
                 content = content.replace(
                     "## Discussion Notes\n\n[Your thinking, exploration, design work...]",
                     notes_section
+                )
+            else:
+                # If no session history, indicate empty session
+                empty_notes = "\n## Discussion Notes\n\n*No discussion content recorded - session may have been brief or had technical issues.*\n\n"
+                content = content.replace(
+                    "## Discussion Notes\n\n[Your thinking, exploration, design work...]",
+                    empty_notes
                 )
             
             # Write file
