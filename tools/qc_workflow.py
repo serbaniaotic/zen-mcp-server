@@ -19,6 +19,7 @@ For collaborative sessions, use qc_collaborative_workflow.py instead.
 import json
 import logging
 import os
+import subprocess
 from pathlib import Path
 from typing import Any, Optional
 from datetime import datetime
@@ -559,7 +560,10 @@ Remember: QC mode is for discussion only - no file writes or command execution."
             # Save full session to qc/ folder
             qc_file = await self._save_qc_session_file()
             
-            # Offer to create task structure
+            # Store QC file path for task creation
+            self._last_qc_file = qc_file
+            
+            # Automatically create task structure
             task_offer = await self._offer_task_creation(arguments)
             
             message = "✅ Decisions saved to memory.\n"
@@ -1155,7 +1159,22 @@ Remember: QC mode is for discussion only - no file writes or command execution."
         return sessions
     
     async def _offer_task_creation(self, arguments: dict[str, Any]) -> str:
-        """Offer to create task structure using task-create.sh"""
+        """
+        Automatically create task structure in workspace using task-create.sh
+        
+        Process:
+        1. Detect or create current day folder
+        2. Extract task details from QC session
+        3. Run task-create.sh script
+        4. Link QC session to created task
+        """
+        
+        # Workspace paths
+        workspaces_root = Path("/home/dingo/code/workspaces")
+        current_week = workspaces_root / "1-current-week"
+        daily_dir = current_week / "daily"
+        scripts_dir = Path("/home/dingo/code/scripts")
+        task_create_script = scripts_dir / "task-create.sh"
         
         # Get context info
         context = self.context_loaded or {}
@@ -1176,15 +1195,115 @@ Remember: QC mode is for discussion only - no file writes or command execution."
         elif query_count > 20:
             complexity = "critical"
         
-        return (
-            f"📋 Task Details from QC:\n"
-            f"   Title: {title}\n"
-            f"   Complexity: {complexity}\n"
-            f"   Context: {context_name}\n"
-            f"\n"
-            f"💡 To create task structure:\n"
-            f"   ~/code/scripts/task-create.sh [day] \"{title}\" {complexity}"
-        )
+        # Find current day number or create new day
+        try:
+            daily_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Get existing days
+            existing_days = [
+                int(d.name.replace('day-', ''))
+                for d in daily_dir.iterdir()
+                if d.is_dir() and d.name.startswith('day-')
+            ]
+            
+            # Determine current day (last day or start new week with day-1)
+            if existing_days:
+                current_day = max(existing_days)
+            else:
+                current_day = 1
+                # Create day-1 directory
+                day_1_dir = daily_dir / "day-1"
+                day_1_dir.mkdir(exist_ok=True)
+                logger.info(f"Created new day directory: {day_1_dir}")
+            
+            # Get QC ID from saved session
+            qc_id = None
+            if hasattr(self, '_last_qc_file') and self._last_qc_file:
+                qc_path = Path(self._last_qc_file)
+                # Extract QC-XXX from filename
+                qc_filename = qc_path.stem
+                if qc_filename.startswith('QC-'):
+                    qc_parts = qc_filename.split('-')
+                    if len(qc_parts) >= 2:
+                        qc_id = f"QC-{qc_parts[1]}"
+            
+            # Run task-create.sh script
+            cmd = [str(task_create_script), str(current_day), title, complexity]
+            if qc_id:
+                cmd.extend(["--from-qc", qc_id])
+            
+            logger.info(f"Running task-create.sh: {' '.join(cmd)}")
+            
+            result = subprocess.run(
+                cmd,
+                cwd=str(scripts_dir),
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            
+            if result.returncode == 0:
+                # Success! Parse output for task directory
+                output_lines = result.stdout.strip().split('\n')
+                task_dir = None
+                for line in output_lines:
+                    if 'Task created:' in line or 'task-' in line:
+                        # Extract task directory path
+                        if 'day-' in line and 'task-' in line:
+                            task_dir = line.strip()
+                
+                success_msg = (
+                    f"📋 Task Details from QC:\n"
+                    f"   Title: {title}\n"
+                    f"   Complexity: {complexity}\n"
+                    f"   Day: {current_day}\n"
+                    f"   Context: {context_name}\n"
+                )
+                
+                if qc_id:
+                    success_msg += f"   Linked QC: {qc_id}\n"
+                
+                success_msg += f"\n✅ Task created automatically in workspace:\n"
+                if task_dir:
+                    success_msg += f"   {task_dir}\n"
+                else:
+                    success_msg += f"   Location: 1-current-week/daily/day-{current_day}/\n"
+                
+                success_msg += f"\n{result.stdout}\n"
+                
+                return success_msg
+            else:
+                # Failed to create task - show error but still offer manual option
+                error_msg = (
+                    f"📋 Task Details from QC:\n"
+                    f"   Title: {title}\n"
+                    f"   Complexity: {complexity}\n"
+                    f"   Context: {context_name}\n"
+                    f"\n"
+                    f"⚠️  Automatic task creation failed:\n"
+                    f"   {result.stderr}\n"
+                    f"\n"
+                    f"💡 To create task manually:\n"
+                    f"   ~/code/scripts/task-create.sh {current_day} \"{title}\" {complexity}"
+                )
+                if qc_id:
+                    error_msg += f" --from-qc {qc_id}"
+                
+                return error_msg
+                
+        except Exception as e:
+            logger.error(f"Error creating task: {e}")
+            return (
+                f"📋 Task Details from QC:\n"
+                f"   Title: {title}\n"
+                f"   Complexity: {complexity}\n"
+                f"   Context: {context_name}\n"
+                f"\n"
+                f"❌ Error: {str(e)}\n"
+                f"\n"
+                f"💡 To create task manually:\n"
+                f"   ~/code/scripts/task-create.sh [day] \"{title}\" {complexity}"
+            )
     
     # ==================== RAG & Auto-Documentation Methods ====================
     # Added: Task-5 (QC RAG Integration & Auto-Documentation)
