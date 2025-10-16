@@ -10,6 +10,7 @@ from .chat_smart import ChatSmartTool
 from .clink import CLinkTool
 from .codereview import CodeReviewTool
 from .consensus import ConsensusTool
+from .dataset_rag import DatasetRAGTool
 from .debug import DebugIssueTool
 from .docgen import DocgenTool
 from .listmodels import ListModelsTool
@@ -39,6 +40,13 @@ from .wikipedia import WikipediaTool
 from .qc_workflow import QCWorkflowTool
 from .qc_search import QCSearchTool
 from .qc_merge_validator import QCMergeValidatorTool
+from .docling_tool import DoclingTool
+from .evidence_chain_tool import EvidenceChainTool
+from .qc_session_tool import QCSessionTool
+from .epub_parser import EpubParserTool
+from .input_preprocessor import InputPreprocessorTool
+from .qc_branching import QcBranchingTool
+from .qc_spec_generator_tool import QcSpecGeneratorTool
 
 __all__ = [
     "ThinkDeepTool",
@@ -51,6 +59,7 @@ __all__ = [
     "ChatSmartTool",
     "CLinkTool",
     "ConsensusTool",
+    "DatasetRAGTool",
     "ListModelsTool",
     "PlannerTool",
     "PrecommitTool",
@@ -78,4 +87,11 @@ __all__ = [
     "QCWorkflowTool",
     "QCSearchTool",
     "QCMergeValidatorTool",
+    "DoclingTool",
+    "EvidenceChainTool",
+    "QCSessionTool",
+    "EpubParserTool",
+    "InputPreprocessorTool",
+    "QcBranchingTool",
+    "QcSpecGeneratorTool",
 ]

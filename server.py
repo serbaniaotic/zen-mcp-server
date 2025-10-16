@@ -54,6 +54,7 @@ from tools import (  # noqa: E402
     CLinkTool,
     CodeReviewTool,
     ConsensusTool,
+    DatasetRAGTool,
     DebugIssueTool,
     DocgenTool,
     ListModelsTool,
@@ -82,6 +83,13 @@ from tools import (  # noqa: E402
     QCWorkflowTool,
     QCSearchTool,
     QCMergeValidatorTool,
+    DoclingTool,
+    EvidenceChainTool,
+    QCSessionTool,
+    EpubParserTool,
+    InputPreprocessorTool,
+    QcBranchingTool,
+    QcSpecGeneratorTool,
 )
 from tools.models import ToolOutput  # noqa: E402
 from utils.env import env_override_enabled, get_env  # noqa: E402
@@ -299,6 +307,7 @@ TOOLS = {
     "testgen": _safe_init_tool(TestGenTool, "testgen"),
     "challenge": _safe_init_tool(ChallengeTool, "challenge"),
     "apilookup": _safe_init_tool(LookupTool, "apilookup"),
+    "dataset_rag": _safe_init_tool(DatasetRAGTool, "dataset_rag"),
     "listmodels": _safe_init_tool(ListModelsTool, "listmodels"),
     "version": _safe_init_tool(VersionTool, "version"),
     "persistent_memory": _safe_init_tool(PersistentMemoryTool, "persistent_memory"),
@@ -317,6 +326,13 @@ TOOLS = {
     "qc_workflow": _safe_init_tool(QCWorkflowTool, "qc_workflow"),
     "qc_search": _safe_init_tool(QCSearchTool, "qc_search"),
     "qc_merge_validator": _safe_init_tool(QCMergeValidatorTool, "qc_merge_validator"),
+    "docling": _safe_init_tool(DoclingTool, "docling"),
+    "evidence_chain": _safe_init_tool(EvidenceChainTool, "evidence_chain"),
+    "qc_session": _safe_init_tool(QCSessionTool, "qc_session"),
+    "epub_parser": _safe_init_tool(EpubParserTool, "epub_parser"),
+    "input_preprocessor": _safe_init_tool(InputPreprocessorTool, "input_preprocessor"),
+    "qc_branching": _safe_init_tool(QcBranchingTool, "qc_branching"),
+    "qc_spec_generator": _safe_init_tool(QcSpecGeneratorTool, "qc_spec_generator"),
 }
 
 # Remove None values (failed initializations)
