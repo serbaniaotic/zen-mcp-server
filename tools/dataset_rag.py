@@ -137,36 +137,85 @@ Note: Failed to retrieve dataset context ({str(e)}). Please answer based on your
     
     async def _query_graphrag(self, query: str, max_hops: int) -> dict:
         """
-        Query smartmemoryapi GraphRAG endpoint
-        
+        Query smartmemoryapi via existing /search endpoint
+
+        Phase 1: Uses vector search from smartmemoryapi + Pinecone
+        Future: Will add graph traversal via Memgraph for multi-hop reasoning
+
         Returns:
-            Dict with vector_results, graph_paths, combined_context
+            Dict with vector_results, combined_context
         """
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
+                # Query smartmemoryapi /search endpoint (Mem0-compatible)
                 response = await client.post(
-                    f"{self.smartmemory_url}/api/v2/rag/graph-search",
+                    f"{self.smartmemory_url}/search",
                     json={
                         "query": query,
-                        "max_vector_results": 5,
-                        "max_graph_hops": max_hops,
-                        "combine_strategy": "weighted"
+                        "limit": 10,
+                        "user_id": "datasets",  # Namespace for HF datasets
+                        "categories": None  # Search all categories
                     }
                 )
-                
+
                 if response.status_code == 200:
-                    return response.json()
+                    data = response.json()
+                    memories = data.get("memories", [])
+
+                    # Format results for compatibility with GraphRAG format
+                    vector_results = [
+                        {
+                            "content": mem.get("content", ""),
+                            "metadata": mem.get("metadata", {}),
+                            "score": mem.get("score", 0.0)
+                        }
+                        for mem in memories
+                    ]
+
+                    # Combine into context text
+                    combined_context = self._format_context(vector_results)
+
+                    return {
+                        "success": True,
+                        "vector_results": vector_results,
+                        "graph_paths": [],  # Empty for Phase 1, will add Memgraph in Phase 2
+                        "combined_context": combined_context
+                    }
                 else:
-                    logger.error(f"GraphRAG API error: {response.status_code}")
+                    logger.error(f"SmartMemoryAPI error: {response.status_code}")
                     return {"success": False, "error": f"API returned {response.status_code}"}
-        
+
         except httpx.ConnectError:
-            logger.error("Failed to connect to smartmemoryapi (is it running?)")
+            logger.error("Failed to connect to smartmemoryapi (is it running on port 8099?)")
             return {"success": False, "error": "smartmemoryapi not available"}
-        
+
         except Exception as e:
-            logger.error(f"GraphRAG query error: {e}")
+            logger.error(f"Dataset RAG query error: {e}")
             return {"success": False, "error": str(e)}
+
+    def _format_context(self, vector_results: list) -> str:
+        """Format vector search results into readable context"""
+        if not vector_results:
+            return "No relevant examples found in datasets."
+
+        lines = ["**Examples from Reasoning Datasets:**\n"]
+
+        for i, result in enumerate(vector_results, 1):
+            content = result.get("content", "")
+            metadata = result.get("metadata", {})
+            score = result.get("score", 0.0)
+
+            # Extract metadata if available
+            dataset = metadata.get("dataset", "unknown")
+            answer = metadata.get("answer", "")
+
+            lines.append(f"\n**Example {i}** (score: {score:.2f}, source: {dataset})")
+            lines.append(f"Question: {content}")
+            if answer:
+                lines.append(f"Answer: {answer}")
+            lines.append("")
+
+        return "\n".join(lines)
     
     def wants_line_numbers_by_default(self) -> bool:
         """Dataset RAG doesn't use file context"""
