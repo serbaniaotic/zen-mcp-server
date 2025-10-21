@@ -65,17 +65,38 @@ class UniverseGeneratorTool(BaseTool):
         self.connections = []
         self.entity_id_map = {}  # name → id mapping
 
-    @property
-    def name(self) -> str:
+    def get_name(self) -> str:
+        """Return tool name for MCP registration"""
         return "universe_generator"
 
-    @property
-    def description(self) -> str:
-        return "Generate Weaver universe from codebase (QC-081 implementation)"
+    def get_description(self) -> str:
+        """Return tool description for MCP clients"""
+        return """Generate Weaver universe from codebase (QC-081 implementation).
 
-    @property
-    def input_schema(self) -> Dict[str, Any]:
+Scans a software project and creates a universe JSON with:
+- React Components → Persona entities (UI with behavior)
+- API Endpoints → Place entities (service locations)
+- MCP Tools → Object entities (AI tools)
+- Deployments → Event entities (moments in time)
+
+This enables OwlSeek to document itself as a queryable knowledge graph
+where code elements become entities with connections."""
+
+    def get_input_schema(self) -> Dict[str, Any]:
+        """Return JSON Schema for tool parameters"""
         return UniverseGeneratorRequest.model_json_schema()
+
+    def get_system_prompt(self) -> str:
+        """Return system prompt for AI model (not used - this tool doesn't use LLM)"""
+        return ""
+
+    def get_request_model(self):
+        """Return Pydantic model for request validation"""
+        return UniverseGeneratorRequest
+
+    async def prepare_prompt(self, request) -> str:
+        """Prepare prompt for AI model (not used - this tool doesn't use LLM)"""
+        return ""
 
     async def execute(self, arguments: Dict[str, Any]) -> ToolOutput:
         """Execute universe generation"""
