@@ -83,13 +83,7 @@ from tools import (  # noqa: E402
     QCWorkflowTool,
     QCSearchTool,
     QCMergeValidatorTool,
-    DoclingTool,
-    EvidenceChainTool,
-    QCSessionTool,
-    EpubParserTool,
-    InputPreprocessorTool,
-    QcBranchingTool,
-    QcSpecGeneratorTool,
+    UniverseGeneratorTool,
 )
 from tools.models import ToolOutput  # noqa: E402
 from utils.env import env_override_enabled, get_env  # noqa: E402
@@ -326,13 +320,7 @@ TOOLS = {
     "qc_workflow": _safe_init_tool(QCWorkflowTool, "qc_workflow"),
     "qc_search": _safe_init_tool(QCSearchTool, "qc_search"),
     "qc_merge_validator": _safe_init_tool(QCMergeValidatorTool, "qc_merge_validator"),
-    "docling": _safe_init_tool(DoclingTool, "docling"),
-    "evidence_chain": _safe_init_tool(EvidenceChainTool, "evidence_chain"),
-    "qc_session": _safe_init_tool(QCSessionTool, "qc_session"),
-    "epub_parser": _safe_init_tool(EpubParserTool, "epub_parser"),
-    "input_preprocessor": _safe_init_tool(InputPreprocessorTool, "input_preprocessor"),
-    "qc_branching": _safe_init_tool(QcBranchingTool, "qc_branching"),
-    "qc_spec_generator": _safe_init_tool(QcSpecGeneratorTool, "qc_spec_generator"),
+    "universe_generator": _safe_init_tool(UniverseGeneratorTool, "universe_generator"),
 }
 
 # Remove None values (failed initializations)
