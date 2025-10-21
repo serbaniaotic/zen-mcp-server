@@ -491,7 +491,19 @@ where code elements become entities with connections."""
                 changed_files = self._extract_changed_files(changelog)
                 event_date = changelog.get('date')
 
+                # Extract entity IDs from changelog
+                entity_ids_from_changelog = self._extract_entity_ids_from_changelog(changelog)
+
                 entity_id = f"owlseek-deploy-{version}"
+
+                # Build connections to affected entities
+                connections = []
+                for affected_id in entity_ids_from_changelog:
+                    connections.append({
+                        "targetId": affected_id,
+                        "strength": 1.0,
+                        "label": "modified"
+                    })
 
                 entity = {
                     "id": entity_id,
@@ -501,10 +513,10 @@ where code elements become entities with connections."""
                         "vi": f"Triển khai {version}"
                     },
                     "description": {
-                        "en": changelog.get('summary', f"Deployment on {version}"),
+                        "en": changelog.get('description', changelog.get('summary', f"Deployment on {version}")),
                         "vi": ""
                     },
-                    "connections": [],
+                    "connections": connections,
                     "domain": ["deployment", "ci-cd"],
                     "subtype": "CalVer Release",
                     "timelineId": "owlseek-timeline",
@@ -1026,6 +1038,26 @@ where code elements become entities with connections."""
 
         description = " ".join(description_lines).strip()
         return description or None
+
+    def _extract_entity_ids_from_changelog(self, changelog: Dict[str, Any]) -> List[str]:
+        """
+        Extract entity IDs from changelog's files_changed array.
+
+        Each file entry can have an entity_ids field that maps the file to entities.
+        """
+        entity_ids = []
+
+        files_changed = changelog.get('files_changed', changelog.get('changed_files', []))
+        if isinstance(files_changed, list):
+            for file_entry in files_changed:
+                if isinstance(file_entry, dict):
+                    # Check for entity_ids field
+                    ids = file_entry.get('entity_ids', [])
+                    if isinstance(ids, list):
+                        entity_ids.extend(ids)
+
+        # Deduplicate
+        return list(set(entity_ids))
 
     def _extract_changed_files(self, changelog: Dict[str, Any]) -> List[str]:
         """Extract changed file paths from a changelog JSON structure."""
