@@ -84,6 +84,7 @@ from tools import (  # noqa: E402
     QCSearchTool,
     QCMergeValidatorTool,
     UniverseGeneratorTool,
+    QueryOwlSeekUniverseTool,
 )
 from tools.models import ToolOutput  # noqa: E402
 from utils.env import env_override_enabled, get_env  # noqa: E402
@@ -321,6 +322,7 @@ TOOLS = {
     "qc_search": _safe_init_tool(QCSearchTool, "qc_search"),
     "qc_merge_validator": _safe_init_tool(QCMergeValidatorTool, "qc_merge_validator"),
     "universe_generator": _safe_init_tool(UniverseGeneratorTool, "universe_generator"),
+    "query_owlseek_universe": _safe_init_tool(QueryOwlSeekUniverseTool, "query_owlseek_universe"),
 }
 
 # Remove None values (failed initializations)
