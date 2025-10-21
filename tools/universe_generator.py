@@ -16,18 +16,17 @@ Key Concepts:
 
 import json
 import logging
-import os
 import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from mcp.types import TextContent
 from pydantic import Field
 
 from tools.shared.base_models import ToolRequest
 from tools.shared.base_tool import BaseTool
 from tools.models import ToolOutput
-from mcp.types import TextContent
 
 logger = logging.getLogger(__name__)
 
@@ -61,9 +60,12 @@ class UniverseGeneratorTool(BaseTool):
 
     def __init__(self):
         super().__init__()
-        self.entities = []
-        self.connections = []
-        self.entity_id_map = {}  # name → id mapping
+        self.entities: List[Dict[str, Any]] = []
+        self.connections: List[Dict[str, Any]] = []
+        self.entity_lookup: Dict[str, Dict[str, Any]] = {}
+        self.entity_alias_map: Dict[str, str] = {}
+        self.file_lookup: Dict[str, str] = {}
+        self.api_path_index: Dict[str, str] = {}
 
     def get_name(self) -> str:
         """Return tool name for MCP registration"""
@@ -94,7 +96,14 @@ where code elements become entities with connections."""
         """Return Pydantic model for request validation"""
         return UniverseGeneratorRequest
 
-    async def prepare_prompt(self, request) -> str:
+    async def prepare_prompt(
+        self,
+        request,
+        files: Optional[list[str]] = None,
+        images: Optional[list[str]] = None,
+        continuation_id: Optional[str] = None,
+        **kwargs
+    ) -> str:
         """Prepare prompt for AI model (not used - this tool doesn't use LLM)"""
         return ""
 
@@ -151,17 +160,22 @@ where code elements become entities with connections."""
 """
 
             return ToolOutput(
-                content=[TextContent(type="text", text=summary)]
+                status="success",
+                content=summary,
+                content_type="markdown",
+                metadata={
+                    "output_path": str(output_file),
+                    "statistics": stats,
+                },
             )
 
         except Exception as e:
             logger.error(f"Universe generation failed: {e}", exc_info=True)
             return ToolOutput(
-                content=[TextContent(
-                    type="text",
-                    text=f"Error generating universe: {str(e)}"
-                )],
-                isError=True
+                status="error",
+                content=f"Error generating universe: {str(e)}",
+                content_type="text",
+                metadata={"exception": repr(e)},
             )
 
     async def generate_owlseek_universe(
@@ -179,7 +193,10 @@ where code elements become entities with connections."""
         # Reset state
         self.entities = []
         self.connections = []
-        self.entity_id_map = {}
+        self.entity_lookup = {}
+        self.entity_alias_map = {}
+        self.file_lookup = {}
+        self.api_path_index = {}
 
         logger.info("Scanning React components...")
         personas = await self._scan_react_components(project / "ui" / "src" / "components")
@@ -193,12 +210,12 @@ where code elements become entities with connections."""
         objects = await self._scan_mcp_tools(project.parent / "zen-mcp-server" / "tools")
         self.entities.extend(objects)
 
-        # Build entity ID map for connection resolution
-        for entity in self.entities:
-            self.entity_id_map[entity['name']['en']] = entity['id']
+        # Build lookup tables for connection resolution
+        self._build_entity_indexes()
 
         logger.info("Detecting connections...")
         await self._detect_connections(project)
+        self._link_deployment_connections()
 
         # Optional: Parse deployment events
         events = []
@@ -253,8 +270,12 @@ where code elements become entities with connections."""
                 with open(tsx_file, 'r', encoding='utf-8') as f:
                     content = f.read()
 
-                # Extract component name from filename
+                # Extract metadata
                 component_name = tsx_file.stem
+                relative_path = tsx_file.relative_to(tsx_file.parents[3])
+                stat = tsx_file.stat()
+                last_modified = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d")
+                description_text = self._extract_jsdoc_description(content)
 
                 # Skip if test file
                 if 'test' in component_name.lower() or '__tests__' in str(tsx_file):
@@ -280,7 +301,7 @@ where code elements become entities with connections."""
                         "vi": component_name
                     },
                     "description": {
-                        "en": f"React component from {tsx_file.relative_to(tsx_file.parents[3])}",
+                        "en": description_text or f"React component from {relative_path}",
                         "vi": ""
                     },
                     "connections": [],  # Will be populated in _detect_connections
@@ -288,10 +309,13 @@ where code elements become entities with connections."""
                     "subtype": "React Component",
                     "timelineId": "owlseek-codebase",
                     "metadata": {
-                        "file": str(tsx_file.relative_to(tsx_file.parents[3])),
+                        "file": str(relative_path),
+                        "componentName": component_name,
                         "lines": line_count,
                         "exports": exports,
-                        "imports": imports
+                        "imports": imports,
+                        "lastModified": last_modified,
+                        "jsdoc": description_text or ""
                     }
                 }
 
@@ -324,6 +348,10 @@ where code elements become entities with connections."""
                 with open(route_file, 'r', encoding='utf-8') as f:
                     content = f.read()
 
+                stat = route_file.stat()
+                last_modified = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d")
+                line_count = len(content.splitlines())
+
                 # Extract route definitions
                 routes = self._extract_routes(content)
 
@@ -354,7 +382,9 @@ where code elements become entities with connections."""
                         "metadata": {
                             "endpoint": path,
                             "method": method,
-                            "file": str(route_file.relative_to(route_file.parents[3]))
+                            "file": str(route_file.relative_to(route_file.parents[3])),
+                            "lines": line_count,
+                            "lastModified": last_modified
                         }
                     }
 
@@ -390,6 +420,9 @@ where code elements become entities with connections."""
                 with open(tool_file, 'r', encoding='utf-8') as f:
                     content = f.read()
 
+                stat = tool_file.stat()
+                last_modified = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d")
+
                 # Extract tool class name
                 tool_class_match = re.search(r'class\s+(\w+Tool)\(', content)
                 if not tool_class_match:
@@ -419,7 +452,9 @@ where code elements become entities with connections."""
                     "timelineId": "owlseek-codebase",
                     "metadata": {
                         "file": str(tool_file.relative_to(tool_file.parents[1])),
-                        "capabilities": capabilities
+                        "toolClass": tool_name,
+                        "capabilities": capabilities,
+                        "lastModified": last_modified
                     }
                 }
 
@@ -453,6 +488,8 @@ where code elements become entities with connections."""
                     changelog = json.load(f)
 
                 version = changelog.get('version', changelog_file.stem)
+                changed_files = self._extract_changed_files(changelog)
+                event_date = changelog.get('date')
 
                 entity_id = f"owlseek-deploy-{version}"
 
@@ -478,7 +515,9 @@ where code elements become entities with connections."""
                         "new_features": len(changelog.get('new_features', [])),
                         "bug_fixes": len(changelog.get('bug_fixes', [])),
                         "known_issues": len(changelog.get('known_issues', [])),
-                        "changelog_url": f"/changelogs/{version}.md"
+                        "changelog_url": f"/changelogs/{version}.md",
+                        "changedFiles": changed_files,
+                        "eventDate": event_date
                     }
                 }
 
@@ -507,27 +546,48 @@ where code elements become entities with connections."""
         """Detect connections for persona (UI component)"""
         try:
             file_path = project_path / entity['metadata']['file']
+            if not file_path.exists():
+                logger.debug(f"Persona file not found for {entity['id']}: {file_path}")
+                return
+
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
 
-            # Find API calls
-            api_calls = self._find_api_calls(content)
-            for api_path in api_calls:
-                # Try to find matching place entity
-                path_slug = api_path.replace('/api/', '').replace('/', '-').replace(':', '')
-                target_id = f"owlseek-api-{path_slug}"
+            # Find API calls (fetch/axios)
+            api_calls = [
+                call for call in self._find_api_calls(content)
+                if call.get('path') and call['path'].startswith('/api/')
+            ]
 
-                if any(e['id'] == target_id for e in self.entities):
-                    entity['connections'].append({
-                        "targetId": target_id,
-                        "strength": 0.9,
-                        "label": "calls"
-                    })
-                    self.connections.append({
-                        "source": entity['id'],
-                        "target": target_id,
-                        "type": "calls"
-                    })
+            if api_calls:
+                entity['metadata']['apiCalls'] = api_calls
+
+            for call in api_calls:
+                path = call.get('path')
+                method = call.get('method')
+
+                target_id = self._resolve_api_target(path, method)
+                if not target_id:
+                    continue
+
+                self._add_connection(
+                    source_id=entity['id'],
+                    target_id=target_id,
+                    label="calls",
+                    strength=0.9,
+                    connection_type="calls",
+                    reciprocal_label="called-by",
+                    reciprocal_strength=0.6,
+                )
+
+                entity['metadata'].setdefault('apiConnections', []).append({
+                    "path": path,
+                    "method": method,
+                    "targetId": target_id,
+                })
+
+            # Resolve component imports → component connections
+            self._detect_import_links(entity)
 
         except Exception as e:
             logger.debug(f"Error detecting connections for {entity['id']}: {e}")
@@ -536,26 +596,36 @@ where code elements become entities with connections."""
         """Detect connections for place (API endpoint)"""
         try:
             file_path = project_path / entity['metadata']['file']
+            if not file_path.exists():
+                logger.debug(f"Route file not found for {entity['id']}: {file_path}")
+                return
+
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
 
             # Find MCP tool calls
             tool_calls = self._find_tool_calls(content)
-            for tool_name in tool_calls:
-                # Try to find matching object entity
-                target_id = f"owlseek-tool-{tool_name.lower().replace('tool', '')}"
+            if tool_calls:
+                entity['metadata']['toolCalls'] = tool_calls
 
-                if any(e['id'] == target_id for e in self.entities):
-                    entity['connections'].append({
-                        "targetId": target_id,
-                        "strength": 1.0,
-                        "label": "uses"
-                    })
-                    self.connections.append({
-                        "source": entity['id'],
-                        "target": target_id,
-                        "type": "uses"
-                    })
+            for tool_name in tool_calls:
+                target_id = self._find_entity_id(tool_name)
+                if not target_id:
+                    # Try without "Tool" suffix
+                    target_id = self._find_entity_id(tool_name.replace("Tool", ""))
+
+                if not target_id:
+                    continue
+
+                self._add_connection(
+                    source_id=entity['id'],
+                    target_id=target_id,
+                    label="uses",
+                    strength=1.0,
+                    connection_type="uses",
+                    reciprocal_label="used-by",
+                    reciprocal_strength=0.5,
+                )
 
         except Exception as e:
             logger.debug(f"Error detecting connections for {entity['id']}: {e}")
@@ -635,22 +705,37 @@ where code elements become entities with connections."""
 
         return capabilities[:5]  # Limit to 5
 
-    def _find_api_calls(self, content: str) -> List[str]:
+    def _find_api_calls(self, content: str) -> List[Dict[str, Optional[str]]]:
         """Find API calls in component code"""
-        api_calls = []
+        api_calls: List[Dict[str, Optional[str]]] = []
 
-        # Match: fetch('/api/...') or axios.get('/api/...')
-        patterns = [
-            r'fetch\([\'"]([^\'"]+)[\'"]',
-            r'axios\.\w+\([\'"]([^\'"]+)[\'"]'
-        ]
+        fetch_pattern = re.compile(
+            r"fetch\(\s*['\"]([^'\"]+)['\"]\s*(?:,\s*\{([^}]*)\})?",
+            re.MULTILINE,
+        )
+        for match in fetch_pattern.finditer(content):
+            path = match.group(1)
+            options = match.group(2) or ""
+            method_match = re.search(r"method\s*:\s*['\"]([A-Z]+)['\"]", options, re.IGNORECASE)
+            method = method_match.group(1).upper() if method_match else None
+            api_calls.append({
+                "path": path,
+                "method": method,
+                "via": "fetch",
+            })
 
-        for pattern in patterns:
-            matches = re.finditer(pattern, content)
-            for match in matches:
-                path = match.group(1)
-                if path.startswith('/api/'):
-                    api_calls.append(path)
+        axios_pattern = re.compile(
+            r"axios\.(get|post|put|delete|patch)\(\s*['\"]([^'\"]+)['\"]",
+            re.IGNORECASE,
+        )
+        for match in axios_pattern.finditer(content):
+            method = match.group(1).upper()
+            path = match.group(2)
+            api_calls.append({
+                "path": path,
+                "method": method,
+                "via": "axios",
+            })
 
         return api_calls
 
@@ -672,3 +757,310 @@ where code elements become entities with connections."""
                     tool_calls.append(tool_name)
 
         return tool_calls
+
+    def _detect_import_links(self, entity: Dict):
+        """Create connections based on import statements between personas."""
+        imports = entity.get('metadata', {}).get('imports') or []
+        if not imports:
+            return
+
+        resolved_imports: List[Dict[str, str]] = []
+
+        for import_path in imports:
+            target_id = self._resolve_import_target(import_path)
+            if not target_id or target_id == entity['id']:
+                continue
+
+            self._add_connection(
+                source_id=entity['id'],
+                target_id=target_id,
+                label="imports",
+                strength=0.6,
+                connection_type="imports",
+                reciprocal_label="imported-by",
+                reciprocal_strength=0.4,
+            )
+            resolved_imports.append({"import": import_path, "targetId": target_id})
+
+        if resolved_imports:
+            entity['metadata']['resolvedImports'] = resolved_imports
+
+    def _resolve_import_target(self, import_path: str) -> Optional[str]:
+        """Resolve an import path to a known entity id if possible."""
+        if not import_path:
+            return None
+
+        cleaned = import_path.split('?', 1)[0]
+        parts = [
+            part for part in re.split(r'[\\/]', cleaned)
+            if part and part not in {'.', '..'}
+        ]
+        if not parts:
+            return None
+
+        candidate = parts[-1]
+        if candidate.lower().startswith('index') and len(parts) > 1:
+            candidate = parts[-2]
+
+        candidate = re.sub(r'\.(tsx|ts|jsx|js)$', '', candidate, flags=re.IGNORECASE)
+
+        target_id = self._find_entity_id(candidate)
+        if target_id:
+            return target_id
+
+        # Fallback: try previous path segment (handles nested folders)
+        if len(parts) > 1:
+            candidate = parts[-2]
+            candidate = re.sub(r'\.(tsx|ts|jsx|js)$', '', candidate, flags=re.IGNORECASE)
+            return self._find_entity_id(candidate)
+
+        return None
+
+    def _resolve_api_target(self, path: str, method: Optional[str]) -> Optional[str]:
+        """Resolve API path + method to a place entity id."""
+        if not path:
+            return None
+
+        normalized_path = self._normalize_api_path(path)
+        if method:
+            key = f"{method.lower()} {normalized_path}"
+            target = self.api_path_index.get(key)
+            if target:
+                return target
+
+        return self.api_path_index.get(normalized_path)
+
+    def _find_entity_id(self, token: str) -> Optional[str]:
+        """Lookup entity id by alias token."""
+        if not token:
+            return None
+
+        key = self._normalize_key(token)
+        if not key:
+            return None
+
+        return self.entity_alias_map.get(key)
+
+    def _add_connection(
+        self,
+        source_id: str,
+        target_id: str,
+        label: str,
+        strength: float,
+        connection_type: str,
+        reciprocal_label: Optional[str] = None,
+        reciprocal_strength: Optional[float] = None,
+    ):
+        """Add a connection between two entities with duplicate protection."""
+
+        source = self.entity_lookup.get(source_id)
+        target = self.entity_lookup.get(target_id)
+        if not source or not target:
+            return
+
+        if not any(conn.get('targetId') == target_id and conn.get('label') == label for conn in source['connections']):
+            source['connections'].append({
+                "targetId": target_id,
+                "strength": strength,
+                "label": label,
+            })
+
+        if reciprocal_label:
+            reciprocal_strength = reciprocal_strength if reciprocal_strength is not None else strength
+            if not any(conn.get('targetId') == source_id and conn.get('label') == reciprocal_label for conn in target['connections']):
+                target['connections'].append({
+                    "targetId": source_id,
+                    "strength": reciprocal_strength,
+                    "label": reciprocal_label,
+                })
+
+        if not any(
+            conn.get('source') == source_id and conn.get('target') == target_id and conn.get('type') == connection_type
+            for conn in self.connections
+        ):
+            self.connections.append({
+                "source": source_id,
+                "target": target_id,
+                "type": connection_type,
+            })
+
+    def _build_entity_indexes(self):
+        """Build lookup tables for entities, aliases, files, and API paths."""
+        self.entity_lookup = {}
+        self.entity_alias_map = {}
+        self.file_lookup = {}
+        self.api_path_index = {}
+
+        for entity in self.entities:
+            entity_id = entity['id']
+            metadata = entity.get('metadata', {}) or {}
+
+            self.entity_lookup[entity_id] = entity
+
+            # Register aliases
+            self._register_alias(entity_id, entity_id)
+            if entity_id.startswith('owlseek-'):
+                self._register_alias(entity_id[len('owlseek-'):], entity_id)
+
+            name_en = entity.get('name', {}).get('en')
+            if name_en:
+                self._register_alias(name_en, entity_id)
+
+            if entity['type'] == 'persona':
+                component_name = metadata.get('componentName')
+                if component_name:
+                    self._register_alias(component_name, entity_id)
+                for export in metadata.get('exports', []) or []:
+                    self._register_alias(export, entity_id)
+
+            if entity['type'] == 'object':
+                tool_class = metadata.get('toolClass')
+                if tool_class:
+                    self._register_alias(tool_class, entity_id)
+                    self._register_alias(tool_class.replace('Tool', ''), entity_id)
+
+            if entity['type'] == 'place':
+                endpoint = metadata.get('endpoint')
+                if endpoint:
+                    normalized = self._normalize_api_path(endpoint)
+                    self.api_path_index.setdefault(normalized, entity_id)
+                    method = metadata.get('method')
+                    if method:
+                        key = f"{method.lower()} {normalized}"
+                        self.api_path_index.setdefault(key, entity_id)
+
+            file_path = metadata.get('file')
+            if file_path:
+                normalized_path = self._normalize_path(file_path)
+                if normalized_path:
+                    self.file_lookup.setdefault(normalized_path, entity_id)
+                    if normalized_path.startswith('owlseek/'):
+                        trimmed = normalized_path.split('owlseek/', 1)[1]
+                        self.file_lookup.setdefault(trimmed, entity_id)
+
+    def _register_alias(self, value: str, entity_id: str):
+        """Register a normalized alias for an entity."""
+        key = self._normalize_key(value)
+        if not key:
+            return
+
+        self.entity_alias_map.setdefault(key, entity_id)
+
+    @staticmethod
+    def _normalize_key(value: str) -> str:
+        if not value:
+            return ""
+        return re.sub(r'[^a-z0-9]+', '', value.lower())
+
+    @staticmethod
+    def _normalize_path(value: str) -> str:
+        if not value:
+            return ""
+        normalized = value.replace('\\', '/').lstrip('./')
+        normalized = re.sub(r'^owlseek/', '', normalized)
+        return normalized.lower()
+
+    @staticmethod
+    def _normalize_api_path(value: str) -> str:
+        return value.strip().lower()
+
+    def _match_entity_by_file(self, file_path: str) -> Optional[str]:
+        normalized = self._normalize_path(file_path)
+        if not normalized:
+            return None
+
+        target = self.file_lookup.get(normalized)
+        if target:
+            return target
+
+        parts = normalized.split('/', 1)
+        if len(parts) > 1:
+            return self.file_lookup.get(parts[1])
+
+        return None
+
+    def _link_deployment_connections(self):
+        """Link deployment events to affected entities based on changed files."""
+        for event in self.entities:
+            if event.get('type') != 'event':
+                continue
+
+            metadata = event.get('metadata', {}) or {}
+            changed_files = metadata.get('changedFiles') or []
+            if not changed_files:
+                continue
+
+            impacted: List[str] = []
+            for file_entry in changed_files:
+                target_id = self._match_entity_by_file(file_entry)
+                if not target_id:
+                    continue
+
+                impacted.append(target_id)
+                self._add_connection(
+                    source_id=event['id'],
+                    target_id=target_id,
+                    label="affects",
+                    strength=0.7,
+                    connection_type="affects",
+                    reciprocal_label="affected-by",
+                    reciprocal_strength=0.5,
+                )
+
+            if impacted:
+                metadata['affectedEntities'] = sorted(set(impacted))
+                event['metadata'] = metadata
+
+    def _extract_jsdoc_description(self, content: str) -> Optional[str]:
+        """Extract the first JSDoc block description from a file."""
+        match = re.search(r"/\*\*([\s\S]*?)\*/", content)
+        if not match:
+            return None
+
+        description_lines = []
+        for line in match.group(1).splitlines():
+            cleaned = line.strip(" *\t")
+            if not cleaned or cleaned.startswith('@'):
+                continue
+            description_lines.append(cleaned)
+
+        description = " ".join(description_lines).strip()
+        return description or None
+
+    def _extract_changed_files(self, changelog: Dict[str, Any]) -> List[str]:
+        """Extract changed file paths from a changelog JSON structure."""
+        candidates: List[str] = []
+
+        direct_keys = ['changed_files', 'changedFiles', 'files', 'impacted_files', 'impactedFiles']
+        for key in direct_keys:
+            value = changelog.get(key)
+            if isinstance(value, list):
+                for item in value:
+                    if isinstance(item, str):
+                        candidates.append(item)
+                    elif isinstance(item, dict):
+                        for field in ('file', 'path', 'name'):
+                            field_value = item.get(field)
+                            if isinstance(field_value, str):
+                                candidates.append(field_value)
+
+        section_keys = ['breaking_changes', 'new_features', 'bug_fixes', 'known_issues', 'changes']
+        for key in section_keys:
+            entries = changelog.get(key)
+            if isinstance(entries, list):
+                for entry in entries:
+                    if isinstance(entry, dict):
+                        for field in ('file', 'path', 'component', 'endpoint'):
+                            field_value = entry.get(field)
+                            if isinstance(field_value, str):
+                                candidates.append(field_value)
+
+        # Deduplicate while preserving order
+        seen = set()
+        deduped = []
+        for item in candidates:
+            if item not in seen:
+                seen.add(item)
+                deduped.append(item)
+
+        return deduped
