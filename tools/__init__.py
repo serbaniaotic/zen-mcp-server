@@ -40,13 +40,16 @@ from .wikipedia import WikipediaTool
 from .qc_workflow import QCWorkflowTool
 from .qc_search import QCSearchTool
 from .qc_merge_validator import QCMergeValidatorTool
-from .docling_tool import DoclingTool
-from .evidence_chain_tool import EvidenceChainTool
-from .qc_session_tool import QCSessionTool
-from .epub_parser import EpubParserTool
-from .input_preprocessor import InputPreprocessorTool
-from .qc_branching import QcBranchingTool
-from .qc_spec_generator_tool import QcSpecGeneratorTool
+# from .docling_tool import DoclingTool
+# from .evidence_chain_tool import EvidenceChainTool
+# from .qc_session_tool import QCSessionTool
+# from .epub_parser import EpubParserTool
+# from .input_preprocessor import InputPreprocessorTool
+# from .qc_branching import QcBranchingTool
+# from .qc_spec_generator_tool import QcSpecGeneratorTool
+from .acoustic_feature_extractor import AcousticFeatureTool
+from .tts_generator import TTSTool
+from .universe_generator import UniverseGeneratorTool
 
 __all__ = [
     "ThinkDeepTool",
@@ -94,4 +97,7 @@ __all__ = [
     "InputPreprocessorTool",
     "QcBranchingTool",
     "QcSpecGeneratorTool",
+    "AcousticFeatureTool",
+    "TTSTool",
+    "UniverseGeneratorTool",
 ]
