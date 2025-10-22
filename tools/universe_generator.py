@@ -253,6 +253,8 @@ where code elements become entities with connections."""
         Scan UI components and create persona entities
 
         Returns list of persona entities for React components
+
+        Note: Excludes old Figma export directories per FIGMA-IMPORT-CLEANUP-GUIDE.md
         """
         personas = []
 
@@ -260,9 +262,31 @@ where code elements become entities with connections."""
             logger.warning(f"Components directory not found: {components_dir}")
             return personas
 
-        # Find all .tsx files
-        tsx_files = list(components_dir.rglob("*.tsx"))
-        logger.info(f"Found {len(tsx_files)} React components")
+        # Directories to exclude (old Figma exports and temp directories)
+        # Per FIGMA-IMPORT-CLEANUP-GUIDE.md
+        exclude_dirs = {
+            'archive', 'extracted', 'new-import',
+            'temp-figma', 'figma-export', 'old-figma'
+        }
+
+        # Find all .tsx files, excluding archived/old Figma exports
+        tsx_files = []
+        for tsx_file in components_dir.rglob("*.tsx"):
+            # Check if any parent directory is in exclude list
+            is_excluded = any(
+                excluded in tsx_file.parts
+                for excluded in exclude_dirs
+            )
+            # Also exclude temp directories with date patterns
+            is_temp = any(
+                part.startswith('temp-figma-')
+                for part in tsx_file.parts
+            )
+
+            if not is_excluded and not is_temp:
+                tsx_files.append(tsx_file)
+
+        logger.info(f"Found {len(tsx_files)} active React components (excluded archived/temp Figma exports)")
 
         for tsx_file in tsx_files:
             try:
@@ -286,6 +310,12 @@ where code elements become entities with connections."""
 
                 # Extract imports (for connections later)
                 imports = self._extract_imports(content)
+
+                # QC-083: Extract interaction metadata for Coach Manager
+                interactions = self._extract_interactions(content)
+
+                # QC-086: Extract Coach Manager dual-layer metadata from JSDoc
+                coach_metadata = self._extract_coach_metadata(content)
 
                 # Count lines
                 line_count = len(content.splitlines())
@@ -315,7 +345,9 @@ where code elements become entities with connections."""
                         "exports": exports,
                         "imports": imports,
                         "lastModified": last_modified,
-                        "jsdoc": description_text or ""
+                        "jsdoc": description_text or "",
+                        "interactions": interactions,  # QC-083: For CoachOverlay
+                        "coachMetadata": coach_metadata  # QC-086: Dual-layer coach documentation
                     }
                 }
 
@@ -679,6 +711,173 @@ where code elements become entities with connections."""
             imports.append(match.group(1))
 
         return imports
+
+    def _extract_interactions(self, content: str) -> List[Dict[str, Any]]:
+        """
+        Extract interaction metadata for Coach Manager (QC-083)
+
+        Detects:
+        - Buttons with data-testid
+        - Event handlers (onClick, onChange, onSubmit)
+        - API calls (fetch, axios)
+        - Navigation (navigate, Link to)
+        """
+        interactions = []
+
+        # 1. Extract buttons with data-testid
+        button_pattern = r'<[Bb]utton[^>]*data-testid=["\']([^"\']+)["\'][^>]*onClick=\{([^}]+)\}'
+        for match in re.finditer(button_pattern, content):
+            test_id = match.group(1)
+            handler = match.group(2).strip()
+
+            interaction = {
+                "type": "button",
+                "selector": f'[data-testid="{test_id}"]',
+                "handler": handler
+            }
+
+            # Check if handler calls an API
+            if 'fetch' in handler or 'api' in handler.lower():
+                # Try to find the API endpoint in the handler function
+                api_endpoint = self._find_api_endpoint_in_handler(content, handler)
+                if api_endpoint:
+                    interaction["apiEndpoint"] = api_endpoint
+
+            interactions.append(interaction)
+
+        # 2. Extract form submissions
+        form_pattern = r'<form[^>]*onSubmit=\{([^}]+)\}'
+        for match in re.finditer(form_pattern, content):
+            handler = match.group(1).strip()
+
+            interaction = {
+                "type": "form",
+                "selector": "form",
+                "handler": handler
+            }
+
+            # Check for API endpoint
+            api_endpoint = self._find_api_endpoint_in_handler(content, handler)
+            if api_endpoint:
+                interaction["apiEndpoint"] = api_endpoint
+
+            interactions.append(interaction)
+
+        # 3. Extract navigation links
+        link_pattern = r'<Link[^>]*to=["\']([^"\']+)["\']'
+        for match in re.finditer(link_pattern, content):
+            to_path = match.group(1)
+
+            interactions.append({
+                "type": "link",
+                "selector": f'a[href*="{to_path}"]',
+                "handler": "navigate",
+                "navigationPath": to_path
+            })
+
+        # 4. Extract direct API calls
+        api_calls = self._find_api_calls(content)
+        for api_call in api_calls:
+            if api_call.get('url'):
+                interactions.append({
+                    "type": "api",
+                    "apiEndpoint": api_call['url'],
+                    "method": api_call.get('method', 'GET')
+                })
+
+        return interactions
+
+    def _extract_coach_metadata(self, content: str) -> Dict[str, Any]:
+        """
+        Extract @coach- tags from JSDoc comments for dual-layer Coach Manager (QC-086)
+
+        Parses JSDoc comments to extract two documentation layers:
+        - Layer 1 (Dev): @coach-element, @coach-handler, @coach-api, @coach-status, etc.
+        - Layer 2 (User): @coach-title, @coach-description, @coach-benefit, @coach-action, etc.
+
+        Returns dict with 'dev' and 'user' keys containing metadata for each layer
+        """
+        coach_data: Dict[str, List[Dict[str, Any]]] = {
+            "dev": [],
+            "user": []
+        }
+
+        # Find all JSDoc blocks with @coach- tags
+        jsdoc_pattern = r'/\*\*\s*(.*?)\s*\*/'
+        jsdoc_blocks = re.findall(jsdoc_pattern, content, re.DOTALL)
+
+        for block in jsdoc_blocks:
+            # Check if this block contains @coach- tags
+            if '@coach-' not in block:
+                continue
+
+            dev_metadata: Dict[str, Any] = {}
+            user_metadata: Dict[str, Any] = {}
+
+            # Extract all lines with @coach- tags
+            lines = block.split('\n')
+            for line in lines:
+                line = line.strip().lstrip('*').strip()
+
+                # Skip empty lines
+                if not line:
+                    continue
+
+                # Match @coach-tag value patterns
+                coach_match = re.match(r'@coach-(\w+)\s+(.+)', line)
+                if not coach_match:
+                    continue
+
+                tag = coach_match.group(1)
+                value = coach_match.group(2).strip()
+
+                # Layer 1 (Dev) tags
+                dev_tags = {
+                    'element', 'handler', 'api', 'returns', 'status',
+                    'qc', 'dependencies', 'implementation', 'code-ref'
+                }
+
+                # Layer 2 (User) tags
+                user_tags = {
+                    'title', 'description', 'benefit', 'action',
+                    'position', 'next', 'tip', 'prerequisites'
+                }
+
+                if tag in dev_tags:
+                    dev_metadata[tag] = value
+                elif tag in user_tags:
+                    user_metadata[tag] = value
+
+            # Store metadata if we found coach tags
+            if dev_metadata:
+                coach_data["dev"].append(dev_metadata)
+            if user_metadata:
+                coach_data["user"].append(user_metadata)
+
+        return coach_data
+
+    def _find_api_endpoint_in_handler(self, content: str, handler_name: str) -> Optional[str]:
+        """Find API endpoint called within a handler function"""
+        # Look for the handler function definition
+        handler_pattern = rf'(const|function)\s+{re.escape(handler_name)}\s*=?\s*(?:async)?\s*\([^)]*\)\s*(?:=>)?\s*\{{([^}}]+(?:\{{[^}}]*\}}[^}}]*)*)\}}'
+
+        match = re.search(handler_pattern, content, re.DOTALL)
+        if match:
+            handler_body = match.group(2)
+
+            # Look for fetch calls in handler body
+            fetch_match = re.search(r'fetch\(["\']([^"\']+)["\']', handler_body)
+            if fetch_match:
+                return fetch_match.group(1)
+
+            # Look for axios calls
+            axios_match = re.search(r'axios\.(get|post|put|delete|patch)\(["\']([^"\']+)["\']', handler_body)
+            if axios_match:
+                method = axios_match.group(1).upper()
+                url = axios_match.group(2)
+                return f"{method} {url}"
+
+        return None
 
     def _extract_routes(self, content: str) -> List[Dict]:
         """Extract API route definitions from route file"""
